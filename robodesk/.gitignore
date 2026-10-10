@@ -1,0 +1,4 @@
+/target
+/node_modules
+/tests/e2e/screenshots
+/src-tauri/gen

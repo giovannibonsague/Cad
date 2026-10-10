@@ -1,0 +1,98 @@
+/* Design tokens. Every colour in the app comes from here so themes are a one-block change. */
+:root,
+:root[data-theme="navy"] {
+  color-scheme: dark;
+  --bg: #0a1020;
+  --bg-sidebar: #0c1426;
+  --bg-panel: #0f1829;
+  --bg-raised: #14203a;
+  --bg-input: #0b1424;
+  --bg-hover: #182847;
+  --bg-selected: #16284a;
+  --border: #1d2b49;
+  --border-strong: #2c3e66;
+  --text: #e6edf8;
+  --text-dim: #9fb0cc;
+  --text-faint: #6c7d9c;
+  --accent: #2d7dff;
+  --accent-hover: #4b92ff;
+  --accent-weak: rgba(45, 125, 255, 0.16);
+  --accent-text: #ffffff;
+  --success: #34c27a;
+  --success-weak: rgba(52, 194, 122, 0.15);
+  --warning: #f2b94b;
+  --warning-weak: rgba(242, 185, 75, 0.15);
+  --danger: #f0616d;
+  --danger-weak: rgba(240, 97, 109, 0.15);
+  --info: #3cb9f2;
+  --info-weak: rgba(60, 185, 242, 0.15);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --canvas-bg: #08101e;
+  --canvas-grid: #14213b;
+  --node-fill: #111d35;
+  --node-head: #18294b;
+}
+
+:root[data-theme="midnight"] {
+  --bg: #05080f;
+  --bg-sidebar: #070b14;
+  --bg-panel: #0a101b;
+  --bg-raised: #0f1727;
+  --bg-input: #060a12;
+  --bg-hover: #121c31;
+  --bg-selected: #11213f;
+  --border: #162036;
+  --border-strong: #24324f;
+  --canvas-bg: #04070d;
+  --canvas-grid: #0e1830;
+  --node-fill: #0b1323;
+  --node-head: #122040;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eef2f8;
+  --bg-sidebar: #e6ecf5;
+  --bg-panel: #ffffff;
+  --bg-raised: #f4f7fc;
+  --bg-input: #ffffff;
+  --bg-hover: #e8eef9;
+  --bg-selected: #dce8ff;
+  --border: #d3dcea;
+  --border-strong: #b7c4da;
+  --text: #14203a;
+  --text-dim: #4a5b7a;
+  --text-faint: #7585a4;
+  --accent: #1a66e8;
+  --accent-hover: #0f52c7;
+  --accent-weak: rgba(26, 102, 232, 0.12);
+  --success: #12935a;
+  --success-weak: rgba(18, 147, 90, 0.12);
+  --warning: #b87408;
+  --warning-weak: rgba(184, 116, 8, 0.13);
+  --danger: #d12f3d;
+  --danger-weak: rgba(209, 47, 61, 0.1);
+  --info: #0b7fb5;
+  --info-weak: rgba(11, 127, 181, 0.12);
+  --shadow: 0 8px 28px rgba(20, 32, 58, 0.18);
+  --canvas-bg: #f7f9fd;
+  --canvas-grid: #dfe6f2;
+  --node-fill: #ffffff;
+  --node-head: #e6eefc;
+}
+
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --row-h: 32px;
+  --titlebar-h: 36px;
+  --statusbar-h: 24px;
+  --sidebar-w: 212px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+}

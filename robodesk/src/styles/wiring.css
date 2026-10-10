@@ -1,0 +1,58 @@
+.wiring-root { display: grid; grid-template-columns: 208px 1fr 272px; grid-template-rows: 44px 1fr; height: 100%; min-height: 0; }
+.wiring-toolbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 12px; background: var(--bg-sidebar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+.wiring-toolbar .select-inline { min-width: 130px; max-width: 260px; height: 28px; }
+.wiring-toolbar .grow { flex: 1; }
+.tb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 6px; flex: none; }
+.zoom-label { min-width: 44px; text-align: center; color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 12px; }
+.save-status { font-size: 12px; color: var(--text-faint); margin-right: 8px; }
+.save-status[data-kind="dirty"] { color: var(--warning); }
+.save-status[data-kind="error"] { color: var(--danger); }
+
+.wiring-palette, .wiring-inspector { background: var(--bg-panel); padding: 12px; overflow-y: auto; min-height: 0; }
+.wiring-palette { border-right: 1px solid var(--border); }
+.wiring-inspector { border-left: 1px solid var(--border); }
+.pal-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-faint); margin-bottom: 8px; font-weight: 600; }
+.pal-hint { font-size: 11.5px; color: var(--text-faint); margin-bottom: 8px; line-height: 1.4; }
+.pal-item { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 9px; margin-bottom: 4px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-raised); text-align: left; cursor: grab; }
+.pal-item:hover:not(:disabled) { border-color: var(--accent); background: var(--bg-hover); }
+.pal-item .grow { flex: 1; }
+.pal-swatch { width: 8px; height: 16px; border-radius: 3px; flex: none; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--bg-panel); box-shadow: 0 0 0 1px var(--border-strong); padding: 0; }
+.swatch.sm { width: 12px; height: 12px; border-width: 1px; flex: none; }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.check-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text-dim); font-size: 12.5px; }
+.pin-row { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.pin-row .input { flex: 1; min-width: 0; }
+.conn-list { display: flex; flex-direction: column; gap: 2px; }
+.conn-item { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 5px 6px; border-radius: var(--radius-sm); text-align: left; font-size: 12px; color: var(--text-dim); }
+.conn-item:hover { background: var(--bg-hover); color: var(--text); }
+.insp-empty { padding: 20px 4px; }
+
+.wiring-canvas { position: relative; min-width: 0; min-height: 0; background: var(--canvas-bg); overflow: hidden; }
+.wiring-svg { width: 100%; height: 100%; display: block; outline: none; touch-action: none; user-select: none; cursor: default; }
+.wiring-svg.panning { cursor: grabbing; }
+.grid-dot { fill: var(--canvas-grid); }
+.node { cursor: move; }
+.node-body { fill: var(--node-fill); stroke: var(--border-strong); stroke-width: 1.25; }
+.node.selected .node-body { stroke: var(--accent); stroke-width: 2; filter: drop-shadow(0 0 6px var(--accent-weak)); }
+.node-head { fill: var(--node-head); }
+.node-title { fill: var(--text); font-size: 12.5px; font-weight: 600; pointer-events: none; font-family: var(--font); }
+.pin-label { fill: var(--text-dim); font-size: 11px; pointer-events: none; font-family: var(--font-mono); }
+.pin { fill: var(--node-fill); stroke: var(--text-dim); stroke-width: 1.75; pointer-events: none; }
+.pin.connected { fill: var(--accent); stroke: var(--accent); }
+.pin.pin-target { fill: var(--success); stroke: var(--success); r: 8; }
+.pin-hit { fill: transparent; pointer-events: all; cursor: crosshair; }
+.pin-hit:hover + * { }
+.wire { cursor: pointer; }
+.wire-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; }
+.wire-line { stroke-width: 2.75; stroke-linecap: round; pointer-events: none; transition: stroke-width 0.1s; }
+.wire:hover .wire-line { stroke-width: 4; }
+.wire.selected .wire-line { stroke-width: 4.5; filter: drop-shadow(0 0 4px currentColor); }
+.wire-label-bg { fill: var(--bg-panel); stroke: var(--border-strong); pointer-events: none; }
+.wire-label { fill: var(--text); font-size: 10.5px; font-family: var(--font-mono); pointer-events: none; }
+.wire-pending { stroke-width: 2.5; stroke-dasharray: 6 5; stroke-linecap: round; pointer-events: none; opacity: 0.9; }
+.canvas-hint { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; text-align: center; pointer-events: none; padding: 24px; }
+.canvas-hint span { max-width: 360px; }
+.canvas-hint .empty-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--accent-weak); color: var(--accent-hover); display: grid; place-items: center; }
+.wiring-none { grid-column: 1 / -1; display: grid; place-items: center; }

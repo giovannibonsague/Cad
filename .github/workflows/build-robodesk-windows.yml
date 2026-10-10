@@ -1,0 +1,26 @@
+name: Build RoboDesk Windows installer
+on:
+  workflow_dispatch:
+  push:
+    paths: ['robodesk/**', '.github/workflows/build-robodesk-windows.yml']
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: robodesk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: robodesk }
+      - run: npm ci
+      - run: cargo test -p robodesk-core
+      - run: npm run test:unit
+      - run: npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: robodesk-windows-installer
+          path: robodesk/target/release/bundle/nsis/*.exe

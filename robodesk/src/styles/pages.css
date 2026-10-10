@@ -1,0 +1,7 @@
+/* Build planner */
+.task-row { position: relative; }
+.task-row .task-grip { color: var(--text-faint); cursor: grab; display: inline-flex; }
+.task-row.drop-before::before, .task-row.drop-after::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--accent); }
+.task-row.drop-before::before { top: -1px; }
+.task-row.drop-after::after { bottom: -1px; }
+.task-row .select.sm { height: 26px; }
