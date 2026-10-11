@@ -64,3 +64,4 @@ changes use versioned migrations (`PRAGMA user_version`) with a backup before up
   the custom title-bar buttons and the installer should be smoke-tested on Windows first.
 - Automated UI tests cover dashboard, projects, inventory and BOM; CAD, wiring editor, planner and settings are
   covered by core/unit tests but not yet by browser tests.
+
