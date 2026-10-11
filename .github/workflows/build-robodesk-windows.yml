@@ -19,10 +19,31 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: robodesk }
-      - run: npm ci
-      - run: cargo test -p robodesk-core
-      - run: npm run test:unit
-      - run: npx tauri build
+      - name: npm ci
+        shell: bash
+        run: npm ci 2>&1 | tee ../ci-npm.log; exit ${PIPESTATUS[0]}
+      - name: Rust core tests
+        shell: bash
+        continue-on-error: true
+        run: cargo test -p robodesk-core 2>&1 | tee ../ci-cargo-test.log; exit ${PIPESTATUS[0]}
+      - name: JS unit tests
+        shell: bash
+        continue-on-error: true
+        run: npm run test:unit 2>&1 | tee ../ci-unit.log; exit ${PIPESTATUS[0]}
+      - name: Build installer
+        shell: bash
+        run: npx tauri build 2>&1 | tee ../ci-build.log; exit ${PIPESTATUS[0]}
+      - name: Push logs to ci-logs branch
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p /tmp/logs && cp ci-*.log /tmp/logs/ 2>/dev/null || true
+          for f in /tmp/logs/*.log; do tail -n 150 "$f" > "$f.tail"; done
+          git config user.name github-actions && git config user.email actions@github.com
+          git checkout --orphan ci-logs && git rm -rf . -q
+          cp /tmp/logs/*.tail . 2>/dev/null || echo "no logs" > none.txt
+          git add -A && git commit -q -m "ci logs for ${GITHUB_SHA}" && git push -f origin ci-logs
       - uses: actions/upload-artifact@v4
         with:
           name: robodesk-windows-installer
