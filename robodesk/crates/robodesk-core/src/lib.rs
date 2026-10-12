@@ -11,6 +11,7 @@ pub mod db;
 pub mod diagrams;
 pub mod error;
 pub mod migrations;
+pub mod models3d;
 pub mod projects;
 pub mod sample;
 pub mod settings;
@@ -180,6 +181,17 @@ impl Core {
                 diagrams::delete(&st.conn, arg(a, "id")?)?;
                 Ok(json!({ "deleted": true }))
             }
+
+            // -------------------------------------------------------- 3D models
+            "models.list" => ok(models3d::list(&st.conn, arg(a, "project_id")?)?),
+            "models.get" => ok(models3d::get(&st.conn, arg(a, "id")?)?),
+            "models.create" => ok(models3d::create(&st.conn, arg(a, "project_id")?, &arg::<String>(a, "name")?, arg_opt(a, "data")?)?),
+            "models.save" => ok(models3d::save(&st.conn, arg(a, "id")?, &arg::<Value>(a, "data")?, arg_opt::<String>(a, "name")?.as_deref())?),
+            "models.delete" => {
+                models3d::delete(&st.conn, arg(a, "id")?)?;
+                Ok(json!({ "deleted": true }))
+            }
+            "models.export_stl" => models3d::export_stl(&st.conn, arg(a, "id")?, &arg::<String>(a, "path")?),
 
             // --------------------------------------------------------- tasks
             "tasks.list" => ok(tasks::list(&st.conn, arg(a, "project_id")?)?),

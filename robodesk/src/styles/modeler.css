@@ -1,0 +1,15 @@
+.modeler-canvas { background: var(--canvas-bg); }
+.modeler-gl { width: 100%; height: 100%; display: block; outline: none; touch-action: none; cursor: grab; }
+.modeler-gl:active { cursor: grabbing; }
+.view-presets { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; }
+.view-presets .chip { height: 24px; padding: 0 9px; background: var(--bg-panel); }
+.obj-list { display: flex; flex-direction: column; gap: 3px; }
+.obj-row { display: flex; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: var(--radius); }
+.obj-row.selected { border-color: var(--accent); background: var(--accent-weak); }
+.obj-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--text); font-size: 12.5px; text-align: left; border-radius: var(--radius); }
+.obj-pick:hover { background: var(--bg-hover); }
+.xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.xyz-cell { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-faint); }
+.xyz-cell .input { min-width: 0; width: 100%; padding: 0 6px; height: 28px; font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.stat-list { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+.stat-list > div { display: flex; justify-content: space-between; gap: 10px; }

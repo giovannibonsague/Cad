@@ -8,11 +8,11 @@ HTML/CSS/JS (no framework, no CDN) and **SQLite**. No account, subscription or n
 Dashboard · Projects (create / edit / duplicate / archive / delete) · Parts Inventory (search, category
 filter, automatic inventory value) · Bill of Materials per project (exact cent math, tax, shipping, CSV
 export) · CAD Files (links to local `.f3d`/`.f3z` files; originals are never modified or deleted; missing
-files are flagged and can be relocated) · Wiring Diagrams (interactive SVG editor: components, pins, coloured
+files are flagged and can be relocated) · 3D Modeler (boxes, cylinders, cones and spheres: place, rotate, resize, colour, orbit/pan/zoom, snap, undo/redo, autosave, export binary STL; renders with a bundled copy of three.js, no internet needed) · Wiring Diagrams (interactive SVG editor: components, pins, coloured
 wires, drag, zoom/pan, undo/redo, autosave) · Build Planner (priority, status, due date, notes, reordering,
 progress) · Settings (theme, autosave, data location, backups, JSON export/import, sample data, reset).
 
-RoboDesk does **not** render or edit Fusion 360 files; it stores references and opens them with the app
+The CAD Files page does **not** render or edit Fusion 360 files; it stores references and opens them with the app
 Windows associates with that extension.
 
 ## Prerequisites (Windows 11)
@@ -28,7 +28,7 @@ npx tauri dev
 
 ## Test
 ```
-npm test                       # Rust core tests (48) + JS unit tests
+npm test                       # Rust core tests (52) + JS unit tests (20)
 cargo build -p robodesk-core --example devbridge
 npm run test:e2e               # headless-Chromium UI tests against the real Rust core (needs `playwright`)
 ```
@@ -62,6 +62,6 @@ changes use versioned migrations (`PRAGMA user_version`) with a backup before up
 - The Windows executable/installer has **not been built or run** in the environment this was written in (Linux).
   The Rust core, UI and shell compilation (`cargo check`) were verified there; Tauri IPC, native dialogs,
   the custom title-bar buttons and the installer should be smoke-tested on Windows first.
-- Automated UI tests cover dashboard, projects, inventory and BOM; CAD, wiring editor, planner and settings are
+- The 3D modeler builds solids from four primitives only; there are no boolean operations (cut/join), sketches, extrusions or STEP/Fusion import. STL export is verified in Rust (exact volumes, valid binary layout) and the 3D view in headless Chromium (software WebGL); it has not been run in WebView2 on Windows.
+- Automated UI tests cover dashboard, projects, inventory, BOM, the 3D modeler and planner; CAD Files, the wiring editor and settings are
   covered by core/unit tests but not yet by browser tests.
-

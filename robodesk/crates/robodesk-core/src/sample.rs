@@ -119,6 +119,19 @@ pub fn load(conn: &Connection) -> Result<Value> {
         ]
     });
     diagrams::create(&tx, lf, "Drive train wiring", Some(doc))?;
+    let plate = |id: &str, name: &str, shape: &str, pos: [f64; 3], size: [f64; 3], color: &str| {
+        serde_json::json!({"id": id, "name": name, "shape": shape, "position": pos, "rotation": [0, 0, 0], "size": size, "color": color, "visible": true})
+    };
+    let chassis = serde_json::json!({"version": 1, "units": "mm", "objects": [
+        plate("o1", "Chassis plate", "box", [0.0, 0.0, 2.0], [120.0, 80.0, 4.0], "#9aa7b8"),
+        plate("o2", "Left wheel", "cylinder", [0.0, 0.0, 0.0], [32.0, 32.0, 8.0], "#e5484d"),
+        plate("o3", "Caster", "sphere", [50.0, 0.0, 0.0], [12.0, 12.0, 12.0], "#e6edf7"),
+    ]});
+    let mut chassis = chassis;
+    chassis["objects"][1]["position"] = serde_json::json!([-30.0, 44.0, 16.0]);
+    chassis["objects"][1]["rotation"] = serde_json::json!([90.0, 0.0, 0.0]);
+    chassis["objects"][2]["position"] = serde_json::json!([50.0, 0.0, -4.0]);
+    crate::models3d::create(&tx, lf, "Chassis", Some(chassis))?;
 
     // Project 2: arm
     let arm = mk("Desktop Servo Arm", "Three-axis servo arm for pick-and-place experiments.", "planning", "2026-10-05", "2027-01-31")?;

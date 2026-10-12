@@ -231,6 +231,10 @@ pub fn duplicate(conn: &Connection, id: i64) -> Result<ProjectSummary> {
         "INSERT INTO diagrams (project_id, name, data) SELECT ?1, name, data FROM diagrams WHERE project_id = ?2",
         params![new_id, id],
     )?;
+    tx.execute(
+        "INSERT INTO models3d (project_id, name, data) SELECT ?1, name, data FROM models3d WHERE project_id = ?2",
+        params![new_id, id],
+    )?;
     tx.commit()?;
     get(conn, new_id)
 }

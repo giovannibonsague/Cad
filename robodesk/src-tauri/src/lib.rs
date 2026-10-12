@@ -24,6 +24,7 @@ fn filters(kind: &str) -> Option<(&'static str, &'static [&'static str])> {
         "cad" => Some(("Fusion 360 files", &["f3d", "f3z"])),
         "csv" => Some(("CSV", &["csv"])),
         "json" => Some(("RoboDesk export", &["json"])),
+        "stl" => Some(("STL mesh", &["stl"])),
         _ => None,
     }
 }

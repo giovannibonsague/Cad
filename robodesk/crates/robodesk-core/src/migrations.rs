@@ -104,6 +104,18 @@ pub const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
     "#,
+    // ---- v2: 3D models
+    r#"
+    CREATE TABLE models3d (
+        id         INTEGER PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name       TEXT    NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
+        data       TEXT    NOT NULL,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_models3d_project ON models3d(project_id);
+    "#,
 ];
 
 pub fn latest_version() -> i64 {

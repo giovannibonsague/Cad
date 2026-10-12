@@ -11,6 +11,7 @@ const NAV = [
   { path: '/inventory', label: 'Parts Inventory', icon: 'parts', group: 'Engineering' },
   { path: '/bom', label: 'Bill of Materials', icon: 'bom' },
   { path: '/cad', label: 'CAD Files', icon: 'cad' },
+  { path: '/modeler', label: '3D Modeler', icon: 'cube3d' },
   { path: '/wiring', label: 'Wiring Diagrams', icon: 'wiring' },
   { path: '/planner', label: 'Build Planner', icon: 'planner' },
 ];
@@ -22,6 +23,7 @@ const ROUTES = [
   { path: '/inventory', title: 'Parts Inventory', nav: '/inventory', load: () => import('./pages/inventory.js') },
   { path: '/bom/:id?', title: 'Bill of Materials', nav: '/bom', load: () => import('./pages/bom.js') },
   { path: '/cad/:id?', title: 'CAD Files', nav: '/cad', load: () => import('./pages/cad.js') },
+  { path: '/modeler/:id?', title: '3D Modeler', nav: '/modeler', flush: true, load: () => import('./pages/modeler.js') },
   { path: '/wiring/:id?', title: 'Wiring Diagrams', nav: '/wiring', flush: true, load: () => import('./pages/wiring.js') },
   { path: '/planner/:id?', title: 'Build Planner', nav: '/planner', load: () => import('./pages/planner.js') },
   { path: '/settings', title: 'Settings', nav: '/settings', load: () => import('./pages/settings.js') },

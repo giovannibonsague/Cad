@@ -70,7 +70,7 @@ export async function startBridge(dataDir, port) {
 
 export async function launch({ width = 1440, height = 900 } = {}) {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch({ executablePath: findChromium(), args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ executablePath: findChromium(), args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
   await context.addInitScript(SHIM);
   const page = await context.newPage();

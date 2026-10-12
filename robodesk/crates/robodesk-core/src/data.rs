@@ -7,6 +7,7 @@ use crate::bom::MAX_LINE_QTY;
 use crate::components::{self, ComponentInput};
 use crate::db;
 use crate::diagrams;
+use crate::models3d;
 use crate::error::{Error, Result};
 use crate::migrations;
 use crate::projects::{self, ProjectInput};
@@ -169,6 +170,13 @@ pub fn export_value(conn: &Connection) -> Result<Value> {
             d["data"] = parsed;
         }
     }
+    let mut models_json = table_json(conn, "models3d", "id")?;
+    for d in &mut models_json {
+        if let Some(Value::String(s)) = d.get("data") {
+            let parsed: Value = serde_json::from_str(s)?;
+            d["data"] = parsed;
+        }
+    }
     let mut settings_map = Map::new();
     for row in table_json(conn, "settings", "key")? {
         if let (Some(Value::String(k)), Some(Value::String(v))) = (row.get("key"), row.get("value")) {
@@ -185,12 +193,13 @@ pub fn export_value(conn: &Connection) -> Result<Value> {
         "bom_items": table_json(conn, "bom_items", "id")?,
         "cad_files": table_json(conn, "cad_files", "id")?,
         "diagrams": diagrams_json,
+        "models": models_json,
         "tasks": table_json(conn, "tasks", "id")?,
         "settings": Value::Object(settings_map),
     }))
 }
 
-fn require_file_ext(path: &str, ext: &str) -> Result<PathBuf> {
+pub(crate) fn require_file_ext(path: &str, ext: &str) -> Result<PathBuf> {
     let p = PathBuf::from(path);
     if !p.is_absolute() {
         return Err(Error::validation("path", "Path must be absolute."));
@@ -320,7 +329,7 @@ fn check_header(root: &Value) -> Result<()> {
 fn apply_import(conn: &Connection, root: &Value) -> Result<Value> {
     check_header(root)?;
     let tx = conn.unchecked_transaction()?;
-    for t in ["tasks", "diagrams", "cad_files", "bom_items", "components", "projects", "settings"] {
+    for t in ["tasks", "models3d", "diagrams", "cad_files", "bom_items", "components", "projects", "settings"] {
         tx.execute(&format!("DELETE FROM {t}"), [])?;
     }
     let now = NOW_SQL;
@@ -414,6 +423,25 @@ fn apply_import(conn: &Connection, root: &Value) -> Result<Value> {
         tx.execute(
             &format!(
                 "INSERT INTO diagrams (id, project_id, name, data, created_at, updated_at)
+                 VALUES (?1,?2,?3,?4, COALESCE(?5, {now}), COALESCE(?6, {now}))"
+            ),
+            rusqlite::params![r.id()?, r.int("project_id")?, name, serde_json::to_string(&doc)?, r.stamp("created_at")?, r.stamp("updated_at")?],
+        )
+        .map_err(|e| r.err(&Error::from(e).to_string()))?;
+    }
+
+    for (i, v) in rows(root, "models")?.iter().enumerate() {
+        let r = Rec::new(v, "models", i)?;
+        let name = r.wrap(text("name", "Model name", r.v.get("name").and_then(Value::as_str).unwrap_or(""), 1, 120))?;
+        let doc: Value = match r.v.get("data") {
+            Some(Value::String(s)) => serde_json::from_str(s).map_err(|e| r.err(&e.to_string()))?,
+            Some(other) => other.clone(),
+            None => return Err(r.err("'data' is required")),
+        };
+        r.wrap(models3d::validate_document(&doc))?;
+        tx.execute(
+            &format!(
+                "INSERT INTO models3d (id, project_id, name, data, created_at, updated_at)
                  VALUES (?1,?2,?3,?4, COALESCE(?5, {now}), COALESCE(?6, {now}))"
             ),
             rusqlite::params![r.id()?, r.int("project_id")?, name, serde_json::to_string(&doc)?, r.stamp("created_at")?, r.stamp("updated_at")?],

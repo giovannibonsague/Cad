@@ -168,6 +168,67 @@ await scenario('BOM: add parts, quantities, tax/shipping math, stock check, CSV 
   await shot('04-bom');
 });
 
+await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export STL', async () => {
+  await go('/modeler/1');
+  await page.getByRole('heading', { name: 'No 3D models for this project' }).waitFor();
+  await page.getByRole('button', { name: 'Create model' }).click();
+  await modal().getByLabel('Model name').fill('Base plate');
+  await modal().getByRole('button', { name: 'Create' }).click();
+  await modal().waitFor({ state: 'detached' });
+  await page.locator('canvas.modeler-gl').waitFor();
+
+  await page.getByRole('button', { name: 'Add Box' }).click();
+  await page.getByRole('button', { name: 'Add Cylinder' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.obj-row').length === 2);
+  // the cylinder is selected: resize it through the inspector
+  await page.getByLabel('Size (mm) X').fill('20'); await page.getByLabel('Size (mm) X').press('Enter');
+  await page.getByLabel('Size (mm) Y').fill('20'); await page.getByLabel('Size (mm) Y').press('Enter');
+  await page.getByLabel('Size (mm) Z').fill('abc'); await page.getByLabel('Size (mm) Z').press('Enter');
+  await waitToast(/enter a number/);
+  await page.getByLabel('Size (mm) Z').fill('0'); await page.getByLabel('Size (mm) Z').press('Enter');
+  await waitToast(/out of range/);
+  await page.getByLabel('Size (mm) Z').fill('50'); await page.getByLabel('Size (mm) Z').press('Enter');
+  await page.getByLabel('Object name').fill('Post'); await page.getByLabel('Object name').press('Enter');
+  await page.getByRole('button', { name: 'Select Post' }).waitFor();
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await waitToast(/Model saved/);
+  let m = (await apiCall(page, 'models.list', { project_id: 1 }))[0];
+  m = await apiCall(page, 'models.get', { id: m.id });
+  const post = m.data.objects.find((o) => o.name === 'Post');
+  assert.deepEqual(post.size, [20, 20, 50]);
+  assert.equal(m.data.objects.length, 2);
+
+  // undo removes the rename; redo brings it back
+  await page.locator('canvas.modeler-gl').focus();
+  await page.keyboard.press('Control+z');
+  await page.getByRole('button', { name: 'Select Cylinder' }).waitFor();
+  await page.keyboard.press('Control+y');
+  await page.getByRole('button', { name: 'Select Post' }).waitFor();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await waitToast(/Model saved/);
+
+  // the 3D view really draws something: the canvas is not a flat colour
+  const distinct = await page.locator('canvas.modeler-gl').evaluate((c) => {
+    const t = document.createElement('canvas'); t.width = 64; t.height = 40;
+    const g = t.getContext('2d'); g.drawImage(c, 0, 0, 64, 40);
+    const d = g.getImageData(0, 0, 64, 40).data; const set = new Set();
+    for (let i = 0; i < d.length; i += 4) set.add(`${d[i]},${d[i + 1]},${d[i + 2]}`);
+    return set.size;
+  });
+  assert.ok(distinct > 8, `canvas looks blank (${distinct} colours)`);
+  await shot('06-modeler');
+
+  const stl = path.join(work, 'plate.stl');
+  await setNative(page, 'pick_save_path', stl);
+  await page.getByRole('button', { name: 'Export STL' }).click();
+  await waitToast(/Exported/);
+  const bytes = fs.readFileSync(stl);
+  const tris = bytes.readUInt32LE(80);
+  assert.equal(bytes.length, 84 + tris * 50);
+  assert.ok(tris > 12, 'box (12) plus cylinder triangles');
+});
+
 await scenario('planner: add tasks, complete one, progress, persistence across restart', async () => {
   await go('/planner/1');
   await page.getByRole('heading', { name: 'No tasks yet' }).waitFor();
