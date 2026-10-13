@@ -1,6 +1,7 @@
 // 3D modeler: build parts from boxes, cylinders, cones and spheres, place/rotate/scale them,
 // and export the result as an STL mesh. Rendering uses a vendored copy of three.js (works offline).
 // Pure model logic lives in lib/model-doc.js; the backend validates and stores the document.
+// Layout follows a CAD workspace: Items tree (left), floating tool rails, view cube, History (right).
 
 import * as THREE from '../../vendor/three/three.module.min.js';
 import { h, mount } from '../lib/dom.js';
@@ -17,6 +18,10 @@ const rememberModel = (pid, id) => { try { localStorage.setItem(LAST_KEY + pid, 
 const SNAP_KEY = 'robodesk.modelSnap';
 const AXES = ['X', 'Y', 'Z'];
 const fmt = (v) => String(D.round(v, 3));
+const SHAPE_ICON = { box: 'cube3d', cylinder: 'shapeCyl', cone: 'shapeCone', sphere: 'shapeSphere' };
+const SHAPE_PLURAL = { box: 'Boxes', cylinder: 'Cylinders', cone: 'Cones', sphere: 'Spheres' };
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2);
+const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 export async function render({ params, view }) {
   const { projects, project } = await resolveProject(params.id);
@@ -29,16 +34,28 @@ export async function render({ params, view }) {
   let selectedId = null;
   let snapStep = (() => { try { const v = Number(localStorage.getItem(SNAP_KEY)); return D.SNAP_STEPS.includes(v) || v === 0 ? v : 1; } catch { return 1; } })();
   let dirty = false; let saving = false; let saveFailed = false;
-  const history = new D.History();
+  let itemFilter = 'all';
+  const collapsed = new Set();
+  let wireframe = false; let gridOn = true;
+  const timeline = new D.Timeline(doc);
   let destroyed = false;
 
-  const root = h('div', { class: 'wiring-root' });
-  const toolbar = h('div', { class: 'wiring-toolbar' });
-  const palette = h('aside', { class: 'wiring-palette', 'aria-label': 'Shapes and objects' });
-  const canvasWrap = h('div', { class: 'wiring-canvas modeler-canvas' });
-  const inspector = h('aside', { class: 'wiring-inspector', 'aria-label': 'Inspector' });
+  const root = h('div', { class: 'cad-root' });
+  const toolbar = h('div', { class: 'cad-toolbar' });
+  const stage = h('div', { class: 'cad-stage' });
+  const canvasWrap = h('div', { class: 'cad-canvas' });
+  const itemsPanel = h('aside', { class: 'cad-panel cad-items', 'aria-label': 'Items' });
+  const railLeft = h('div', { class: 'cad-rail cad-rail-left', role: 'toolbar', 'aria-label': 'Add shapes' });
+  const railRight = h('div', { class: 'cad-rail cad-rail-right', role: 'toolbar', 'aria-label': 'View tools' });
+  const side = h('div', { class: 'cad-side' });
+  const historyPanel = h('section', { class: 'cad-panel cad-history', 'aria-label': 'History' });
+  const inspector = h('section', { class: 'cad-panel cad-props', 'aria-label': 'Properties' });
   const saveStatus = h('span', { class: 'save-status', role: 'status' });
-  mount(root, toolbar, palette, canvasWrap, inspector);
+  const hint = h('div', { class: 'canvas-hint hidden' });
+  const cubeHost = h('div', { class: 'view-cube-host' });
+  side.append(historyPanel, inspector);
+  stage.append(canvasWrap, itemsPanel, railLeft, railRight, cubeHost, side);
+  mount(root, toolbar, stage);
   mount(view, root);
 
   // ----------------------------------------------------------------- saving
@@ -75,30 +92,49 @@ export async function render({ params, view }) {
   }
 
   // --------------------------------------------------------------- mutations
-  function change(fn, { select } = {}) {
-    history.push(doc);
-    try { fn(doc); } catch (e) { history.undo(doc); toast(e.message, 'error'); return; }
-    if (select !== undefined) selectedId = select;
+  const selected = () => (selectedId ? D.findObject(doc, selectedId) : null);
+  /** Apply an edit to a copy, validate it, then commit it as one labelled history entry. */
+  function change(label, fn) {
+    const next = D.clone(doc);
+    let result;
+    try { result = fn(next); } catch (e) { toast(e.message, 'error'); return false; }
+    const problem = D.validateModel(next);
+    if (problem) { toast(problem, 'error'); return false; }
+    doc = next;
+    timeline.push(label, doc);
+    markDirty(); paintAll();
+    return result ?? true;
+  }
+  function restore(next) {
+    if (!next) return;
+    doc = next;
+    if (selectedId && !D.findObject(doc, selectedId)) selectedId = null;
     markDirty(); paintAll();
   }
-  function undo() { const prev = history.undo(doc); if (prev) { doc = prev; fixSelection(); markDirty(); paintAll(); } }
-  function redo() { const next = history.redo(doc); if (next) { doc = next; fixSelection(); markDirty(); paintAll(); } }
-  function fixSelection() { if (selectedId && !D.findObject(doc, selectedId)) selectedId = null; }
-  const selected = () => (selectedId ? D.findObject(doc, selectedId) : null);
+  const undo = () => restore(timeline.undo());
+  const redo = () => restore(timeline.redo());
+  const jump = (i) => restore(timeline.jump(i));
+
   function addShape(shape) {
     if (!current) return;
     let id = null;
-    change((d) => { id = D.addObject(d, shape, { snapStep }).id; }, {});
-    if (id) { selectedId = id; paintAll(); }
+    const ok = change(`Add ${D.SHAPES.find((t) => t.shape === shape).label}`, (d) => { id = D.addObject(d, shape, { snapStep }).id; });
+    if (ok && id) { selectedId = id; spawn.set(id, performance.now()); paintAll(); animate(); }
   }
-  function deleteSelected() { const o = selected(); if (o) change((d) => D.removeObject(d, o.id), { select: null }); }
-  function duplicateSelected() { const o = selected(); if (o) { let id = null; change((d) => { id = D.duplicateObject(d, o.id, Math.max(snapStep, 10)).id; }); if (id) { selectedId = id; paintAll(); } } }
+  function deleteSelected() { const o = selected(); if (o) { selectedId = null; change(`Delete ${o.name}`, (d) => D.removeObject(d, o.id)); } }
+  function duplicateSelected() {
+    const o = selected(); if (!o) return;
+    let id = null;
+    if (change(`Duplicate ${o.name}`, (d) => { id = D.duplicateObject(d, o.id, Math.max(snapStep, 10)).id; })) { selectedId = id; spawn.set(id, performance.now()); paintAll(); animate(); }
+  }
 
   // ------------------------------------------------------------------- 3D scene
-  let renderer = null; let scene; let camera; let rafPending = false;
-  const meshes = new Map(); // id -> { mesh, edges }
+  let renderer = null; let scene; let camera; let gridHelper; let rafPending = false;
+  const meshes = new Map(); // id -> { mesh, edges, shape }
   const geoms = {};
+  const spawn = new Map(); // id -> start time of the "pop in" animation
   const orbit = { target: new THREE.Vector3(0, 0, 20), radius: 260, theta: -Math.PI / 3.2, phi: Math.PI / 3 };
+  let tween = null;
   const cssVar = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
   function unitGeometry(shape) {
@@ -121,23 +157,23 @@ export async function render({ params, view }) {
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.domElement.className = 'modeler-gl';
+    renderer.domElement.className = 'cad-gl';
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('role', 'application');
     renderer.domElement.setAttribute('aria-label', '3D viewport. Drag to orbit, right-drag to pan, scroll to zoom, click an object to select it.');
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(cssVar('--canvas-bg', '#0b1220'));
-    camera = new THREE.PerspectiveCamera(45, 1, 1, 100000);
+    scene.background = new THREE.Color(cssVar('--canvas-bg', '#0c0c0e'));
+    camera = new THREE.PerspectiveCamera(40, 1, 1, 100000);
     camera.up.set(0, 0, 1);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(300, -400, 600); scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x9db4ff, 0.6); fill.position.set(-400, 300, 200); scene.add(fill);
-    const grid = new THREE.GridHelper(2000, 100, new THREE.Color(cssVar('--text-faint', '#5b6b88')), new THREE.Color(cssVar('--border-strong', '#2c3a56')));
-    grid.rotateX(Math.PI / 2);
-    scene.add(grid);
-    const axis = (to, color) => new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), to]), new THREE.LineBasicMaterial({ color }));
-    scene.add(axis(new THREE.Vector3(60, 0, 0), 0xe5484d), axis(new THREE.Vector3(0, 60, 0), 0x3fb950), axis(new THREE.Vector3(0, 0, 60), 0x4c8dff));
-    mount(canvasWrap, renderer.domElement, hint, viewCube);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.7); sun.position.set(300, -400, 600); scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xb4c4ff, 0.55); fill.position.set(-400, 300, 200); scene.add(fill);
+    gridHelper = new THREE.GridHelper(4000, 200, new THREE.Color(cssVar('--text-faint', '#70707a')), new THREE.Color(cssVar('--canvas-grid', '#26262b')));
+    gridHelper.rotateX(Math.PI / 2);
+    scene.add(gridHelper);
+    const axis = (to, color) => new THREE.Line(new THREE.BufferGeometry().setFromPoints([to.clone().multiplyScalar(-1), to]), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 }));
+    scene.add(axis(new THREE.Vector3(2000, 0, 0), 0xe5484d), axis(new THREE.Vector3(0, 2000, 0), 0x3fb950), axis(new THREE.Vector3(0, 0, 2000), 0x4c8dff));
+    mount(canvasWrap, renderer.domElement, hint);
     placeCamera(); resize();
   }
 
@@ -146,6 +182,8 @@ export async function render({ params, view }) {
     const { target, radius, theta, phi } = orbit;
     camera.position.set(target.x + radius * Math.sin(phi) * Math.cos(theta), target.y + radius * Math.sin(phi) * Math.sin(theta), target.z + radius * Math.cos(phi));
     camera.lookAt(target);
+    camera.updateMatrixWorld();
+    paintCube();
     requestRender();
   }
   function requestRender() {
@@ -171,15 +209,16 @@ export async function render({ params, view }) {
   function syncScene() {
     if (!renderer) return;
     const live = new Set(doc.objects.map((o) => o.id));
-    for (const [id, m] of meshes) if (!live.has(id)) { scene.remove(m.mesh); m.mesh.material.dispose(); m.edges.material.dispose(); meshes.delete(id); }
+    const drop = (id, m) => { scene.remove(m.mesh); m.mesh.material.dispose(); m.edges.material.dispose(); meshes.delete(id); };
+    for (const [id, m] of meshes) if (!live.has(id)) drop(id, m);
     for (const o of doc.objects) {
       let m = meshes.get(o.id);
       const g = unitGeometry(o.shape);
-      if (m && m.shape !== o.shape) { scene.remove(m.mesh); m.mesh.material.dispose(); m.edges.material.dispose(); meshes.delete(o.id); m = null; }
+      if (m && m.shape !== o.shape) { drop(o.id, m); m = null; }
       if (!m) {
-        const mesh = new THREE.Mesh(g.geo, new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.55, metalness: 0.15 }));
+        const mesh = new THREE.Mesh(g.geo, new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.45, metalness: 0.25 }));
         mesh.userData.id = o.id;
-        const edges = new THREE.LineSegments(g.edges, new THREE.LineBasicMaterial({ color: 0x0b1220 }));
+        const edges = new THREE.LineSegments(g.edges, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 }));
         mesh.add(edges);
         scene.add(mesh);
         m = { mesh, edges, shape: o.shape };
@@ -188,57 +227,104 @@ export async function render({ params, view }) {
       applyTransform(m.mesh, o);
       m.mesh.visible = o.visible !== false;
       m.mesh.material.color.set(o.color);
+      m.mesh.material.wireframe = wireframe;
       const sel = o.id === selectedId;
-      m.mesh.material.emissive.set(sel ? 0x1d3a78 : 0x000000);
-      m.edges.material.color.set(sel ? 0x7fb0ff : 0x0b1220);
+      m.mesh.material.emissive.set(sel ? 0x24467f : 0x000000);
+      m.edges.material.color.set(sel ? 0x8dbbff : 0x000000);
+      m.edges.material.opacity = sel ? 1 : 0.55;
+      m.edges.visible = !wireframe;
     }
+    if (gridHelper) gridHelper.visible = gridOn;
     requestRender();
   }
 
-  // ------------------------------------------------------------------ camera moves
-  function setView(name) {
-    const presets = { iso: [-Math.PI / 3.2, Math.PI / 3], front: [-Math.PI / 2, Math.PI / 2], back: [Math.PI / 2, Math.PI / 2], right: [0, Math.PI / 2], left: [Math.PI, Math.PI / 2], top: [-Math.PI / 2, 0.0001] };
-    const p = presets[name]; if (!p) return;
-    [orbit.theta, orbit.phi] = p; placeCamera();
+  // -------------------------------------------------------------------- animation
+  let animating = false;
+  function animate() {
+    if (animating || !renderer || reduceMotion()) { if (reduceMotion()) { spawn.clear(); syncScene(); } return; }
+    animating = true;
+    const step = (now) => {
+      if (destroyed || !renderer) { animating = false; return; }
+      let active = false;
+      if (tween) {
+        const t = Math.min((now - tween.t0) / tween.ms, 1); const k = ease(t);
+        orbit.theta = tween.from.theta + (tween.to.theta - tween.from.theta) * k;
+        orbit.phi = tween.from.phi + (tween.to.phi - tween.from.phi) * k;
+        orbit.radius = tween.from.radius + (tween.to.radius - tween.from.radius) * k;
+        orbit.target.lerpVectors(tween.from.target, tween.to.target, k);
+        placeCamera();
+        if (t >= 1) tween = null; else active = true;
+      }
+      for (const [id, t0] of spawn) {
+        const m = meshes.get(id); const o = D.findObject(doc, id);
+        if (!m || !o) { spawn.delete(id); continue; }
+        const t = Math.min((now - t0) / 260, 1);
+        const k = 1 - (1 - t) ** 3;
+        const over = t < 1 ? 1 + 0.08 * Math.sin(t * Math.PI) : 1; // slight overshoot
+        m.mesh.scale.set(o.size[0] * k * over, o.size[1] * k * over, o.size[2] * k * over);
+        if (t >= 1) { spawn.delete(id); applyTransform(m.mesh, o); } else active = true;
+      }
+      requestRender();
+      if (active) requestAnimationFrame(step); else animating = false;
+    };
+    requestAnimationFrame(step);
   }
+  function flyTo(to) {
+    // take the shortest way round in azimuth
+    let dth = to.theta - orbit.theta;
+    dth = Math.atan2(Math.sin(dth), Math.cos(dth));
+    if (reduceMotion()) { Object.assign(orbit, { theta: orbit.theta + dth, phi: to.phi, radius: to.radius }); orbit.target.copy(to.target); placeCamera(); return; }
+    tween = { t0: performance.now(), ms: 360, from: { theta: orbit.theta, phi: orbit.phi, radius: orbit.radius, target: orbit.target.clone() }, to: { theta: orbit.theta + dth, phi: to.phi, radius: to.radius, target: to.target.clone() } };
+    animate();
+  }
+
+  // ------------------------------------------------------------------ camera moves
+  const PRESETS = { iso: [-Math.PI / 3.2, Math.PI / 3], front: [-Math.PI / 2, Math.PI / 2], back: [Math.PI / 2, Math.PI / 2], right: [0, Math.PI / 2], left: [Math.PI, Math.PI / 2], top: [-Math.PI / 2, 0.0001], bottom: [-Math.PI / 2, Math.PI - 0.0001] };
+  const setView = (name) => { const p = PRESETS[name]; if (p) flyTo({ theta: p[0], phi: p[1], radius: orbit.radius, target: orbit.target }); };
   function fit() {
     const b = D.docBounds(doc, { visibleOnly: true });
-    if (b) {
-      orbit.target.set((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
-      const diag = Math.hypot(...b.size);
-      orbit.radius = Math.max(diag * 1.6, 60);
-    } else { orbit.target.set(0, 0, 20); orbit.radius = 260; }
-    placeCamera();
+    const target = b ? new THREE.Vector3((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2) : new THREE.Vector3(0, 0, 20);
+    flyTo({ theta: orbit.theta, phi: orbit.phi, radius: b ? Math.max(Math.hypot(...b.size) * 1.7, 60) : 260, target });
   }
   const zoomBy = (f) => { orbit.radius = Math.min(Math.max(orbit.radius * f, 5), 20000); placeCamera(); };
 
+  // ---------------------------------------------------------------------- view cube
+  const FACES = [['Right', 'rotateY(90deg)'], ['Left', 'rotateY(-90deg)'], ['Back', 'rotateX(-90deg)'], ['Front', 'rotateX(90deg)'], ['Top', ''], ['Bottom', 'rotateY(180deg)']];
+  const FACE_VIEW = { Right: 'right', Left: 'left', Back: 'back', Front: 'front', Top: 'top', Bottom: 'bottom' };
+  const cube = h('div', { class: 'cube' }, FACES.map(([name, tf]) => h('button', { class: 'cube-face', type: 'button', style: { transform: `${tf} translateZ(21px)` }, title: `${name} view`, 'aria-label': `${name} view`, onClick: () => setView(FACE_VIEW[name]) }, name)));
+  mount(cubeHost, h('div', { class: 'cube-scene' }, cube));
+  function paintCube() {
+    // scene axes -> screen: use the camera's rotation, flipping y because CSS y points down
+    const e = camera.matrixWorldInverse.elements; // column-major
+    const m = [e[0], -e[1], e[2], 0, e[4], -e[5], e[6], 0, e[8], -e[9], e[10], 0, 0, 0, 0, 1];
+    cube.style.transform = `matrix3d(${m.map((v) => (Math.abs(v) < 1e-9 ? 0 : v.toFixed(5))).join(',')})`;
+  }
+
   // -------------------------------------------------------------- pointer interaction
   const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
-  function pick(e) {
+  function setRay(e) {
     const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
+  }
+  function pick(e) {
+    setRay(e);
     const hits = ray.intersectObjects([...meshes.values()].map((m) => m.mesh).filter((m) => m.visible), false);
     return hits[0] ? hits[0].object.userData.id : null;
   }
-  const planeHit = (e, z) => {
-    const r = renderer.domElement.getBoundingClientRect();
-    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const out = new THREE.Vector3();
-    return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), out) ? out : null;
-  };
+  const planeHit = (e, z) => { setRay(e); const out = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), out) ? out : null; };
+  const select = (id) => { if (selectedId === id) return; selectedId = id; syncScene(); paintInspector(); paintItems(); };
   let gesture = null;
   function bindPointer() {
     const el = renderer.domElement;
     el.addEventListener('pointerdown', (e) => {
       el.focus({ preventScroll: true });
+      tween = null;
       const id = e.button === 0 && !e.shiftKey ? pick(e) : null;
       if (id) {
         const o = D.findObject(doc, id);
-        if (selectedId !== id) { selectedId = id; syncScene(); paintInspector(); paintList(); }
-        const hit = planeHit(e, o.position[2]);
-        gesture = { type: 'move', id, hit, start: [...o.position], moved: false, sx: e.clientX, sy: e.clientY };
+        select(id);
+        gesture = { type: 'move', id, hit: planeHit(e, o.position[2]), start: [...o.position], moved: false, sx: e.clientX, sy: e.clientY };
       } else if (e.button === 0 && !e.shiftKey) {
         gesture = { type: 'orbit', sx: e.clientX, sy: e.clientY, th: orbit.theta, ph: orbit.phi, moved: false };
       } else {
@@ -263,7 +349,7 @@ export async function render({ params, view }) {
       } else if (gesture.type === 'move' && gesture.hit) {
         if (!gesture.moved && Math.hypot(dx, dy) < 4) return;
         const o = D.findObject(doc, gesture.id); if (!o) return;
-        if (!gesture.moved) { history.push(doc); gesture.moved = true; }
+        gesture.moved = true;
         const p = planeHit(e, gesture.start[2]); if (!p) return;
         o.position[0] = D.round(D.snap(gesture.start[0] + p.x - gesture.hit.x, snapStep));
         o.position[1] = D.round(D.snap(gesture.start[1] + p.y - gesture.hit.y, snapStep));
@@ -274,49 +360,77 @@ export async function render({ params, view }) {
     const end = (e) => {
       if (!gesture) return;
       const g = gesture; gesture = null;
-      if (g.type === 'orbit' && !g.moved && selectedId) { selectedId = null; syncScene(); paintInspector(); paintList(); }
-      if (g.type === 'move' && g.moved) { markDirty(); paintAll(); }
+      if (g.type === 'orbit' && !g.moved && selectedId) { selectedId = null; syncScene(); paintInspector(); paintItems(); }
+      if (g.type === 'move' && g.moved) {
+        const o = D.findObject(doc, g.id);
+        timeline.push(`Move ${o ? o.name : 'object'}`, doc);
+        markDirty(); paintAll();
+      }
       try { el.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
-    el.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
+    el.addEventListener('wheel', (e) => { e.preventDefault(); tween = null; zoomBy(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
   }
 
-  // -------------------------------------------------------------------- UI: palette/list
-  const hint = h('div', { class: 'canvas-hint hidden' });
-  const viewCube = h('div', { class: 'view-presets', role: 'group', 'aria-label': 'Camera views' },
-    [['iso', 'Iso'], ['front', 'Front'], ['right', 'Right'], ['top', 'Top']].map(([k, l]) => h('button', { class: 'chip', type: 'button', title: `${l} view`, onClick: () => setView(k) }, l)));
-  const listHost = h('div', { class: 'obj-list' });
-
-  function paintPalette() {
-    mount(palette,
-      h('div', { class: 'pal-title' }, 'Add shape'),
-      h('div', { class: 'pal-hint' }, 'Click a shape to add it to the model. Drag objects in the viewport to move them.'),
-      D.SHAPES.map((t) => h('button', { class: 'pal-item', type: 'button', disabled: !current, 'aria-label': `Add ${t.label}`, onClick: () => addShape(t.shape) }, icon('plus', 14), h('span', { class: 'grow' }, t.label), h('span', { class: 'faint mono', style: { fontSize: '10.5px' } }, t.size.join('×')))),
-      h('div', { class: 'pal-title', style: { marginTop: '16px' } }, 'Objects'),
-      listHost);
-    paintList();
+  // ------------------------------------------------------------- UI: rails and Items
+  function paintRails() {
+    mount(railLeft, D.SHAPES.map((t) => h('button', { class: 'rail-btn', type: 'button', disabled: !current, title: `Add ${t.label}`, 'aria-label': `Add ${t.label}`, onClick: () => addShape(t.shape) }, icon(SHAPE_ICON[t.shape], 19))));
+    mount(railRight,
+      h('button', { class: 'rail-btn', type: 'button', title: 'Fit model to window (F)', 'aria-label': 'Fit model to window', disabled: !current, onClick: fit }, icon('fit', 18)),
+      h('button', { class: 'rail-btn', type: 'button', title: 'Zoom in', 'aria-label': 'Zoom in', disabled: !current, onClick: () => zoomBy(1 / 1.25) }, icon('zoomIn', 18)),
+      h('button', { class: 'rail-btn', type: 'button', title: 'Zoom out', 'aria-label': 'Zoom out', disabled: !current, onClick: () => zoomBy(1.25) }, icon('zoomOut', 18)),
+      h('span', { class: 'rail-sep' }),
+      h('button', { class: 'rail-btn', type: 'button', title: 'Wireframe', 'aria-label': 'Wireframe', 'aria-pressed': String(wireframe), onClick: () => { wireframe = !wireframe; syncScene(); paintRails(); } }, icon('wire', 18)),
+      h('button', { class: 'rail-btn', type: 'button', title: 'Show grid', 'aria-label': 'Show grid', 'aria-pressed': String(gridOn), onClick: () => { gridOn = !gridOn; syncScene(); paintRails(); } }, icon('grid', 18)));
   }
-  function paintList() {
-    if (!doc.objects.length) { mount(listHost, h('div', { class: 'pal-hint' }, 'No objects yet.')); return; }
-    mount(listHost, doc.objects.map((o) => h('div', { class: `obj-row ${o.id === selectedId ? 'selected' : ''}` },
-      h('button', { class: 'obj-pick', type: 'button', 'aria-label': `Select ${o.name}`, 'aria-pressed': String(o.id === selectedId), onClick: () => { selectedId = o.id; syncScene(); paintInspector(); paintList(); } },
+
+  function paintItems() {
+    const visible = doc.objects.filter((o) => (itemFilter === 'all' ? true : itemFilter === 'visible' ? o.visible !== false : o.visible === false));
+    const filter = selectEl({ label: 'Show items', value: itemFilter, className: 'sm', options: [{ value: 'all', label: 'All items' }, { value: 'visible', label: 'Visible' }, { value: 'hidden', label: 'Hidden' }], onChange: (v) => { itemFilter = v; paintItems(); } });
+    const groups = D.SHAPES.map((t) => ({ t, list: visible.filter((o) => o.shape === t.shape) })).filter((g) => g.list.length);
+    const row = (o) => h('div', { class: `obj-row ${o.id === selectedId ? 'selected' : ''}` },
+      h('button', { class: 'obj-pick', type: 'button', 'aria-label': `Select ${o.name}`, 'aria-pressed': String(o.id === selectedId), onClick: () => select(o.id) },
         h('span', { class: 'swatch sm', style: { background: o.color } }), h('span', { class: 'ellipsis' }, o.name)),
-      iconBtn(o.visible === false ? 'eyeOff' : 'eye', o.visible === false ? `Show ${o.name}` : `Hide ${o.name}`, () => change((d) => { const x = D.findObject(d, o.id); x.visible = x.visible === false; })))));
+      iconBtn(o.visible === false ? 'eyeOff' : 'eye', o.visible === false ? `Show ${o.name}` : `Hide ${o.name}`, () => change(`${o.visible === false ? 'Show' : 'Hide'} ${o.name}`, (d) => { const x = D.findObject(d, o.id); x.visible = x.visible === false; })));
+    mount(itemsPanel,
+      h('div', { class: 'cad-panel-head' }, h('h3', {}, 'Items'), h('span', { class: 'faint' }, String(doc.objects.length))),
+      h('div', { class: 'cad-panel-tools' }, filter),
+      h('div', { class: 'cad-scroll obj-list' }, groups.length ? groups.map(({ t, list }) => {
+        const open = !collapsed.has(t.shape);
+        return h('div', { class: 'obj-group' },
+          h('button', { class: 'obj-group-head', type: 'button', 'aria-expanded': String(open), onClick: () => { if (open) collapsed.add(t.shape); else collapsed.delete(t.shape); paintItems(); } },
+            h('span', { class: `chev ${open ? 'open' : ''}` }, icon('chevronRight', 13)), icon(SHAPE_ICON[t.shape], 15), h('span', { class: 'grow' }, SHAPE_PLURAL[t.shape]), h('span', { class: 'faint' }, String(list.length))),
+          open ? h('div', { class: 'obj-group-body' }, list.map(row)) : null);
+      }) : [h('div', { class: 'pal-hint', style: { padding: '14px' } }, doc.objects.length ? 'No items match this filter.' : 'Use the shape tools to add your first object.')]));
   }
 
-  // ------------------------------------------------------------------ UI: inspector
+  // --------------------------------------------------------------- UI: history panel
+  function paintHistory() {
+    const items = timeline.entries.map((e, i) => {
+      const verb = e.label.split(' ')[0];
+      const ic = { Add: 'plus', Delete: 'trash', Move: 'fit', Duplicate: 'copy', Start: 'cube3d' }[verb] || 'edit';
+      return h('button', { class: `hist-row ${i === timeline.cursor ? 'current' : ''} ${i > timeline.cursor ? 'future' : ''}`, type: 'button', 'aria-current': i === timeline.cursor ? 'step' : null, onClick: () => jump(i) },
+        icon(ic, 15), h('span', { class: 'grow ellipsis' }, e.label), icon('chevronRight', 13));
+    });
+    mount(historyPanel,
+      h('div', { class: 'cad-panel-head' }, h('h3', {}, 'History'), h('span', { class: 'row', style: { gap: '2px' } },
+        iconBtn('undo', 'Undo (Ctrl+Z)', undo, { disabled: !timeline.canUndo }), iconBtn('redo', 'Redo (Ctrl+Y)', redo, { disabled: !timeline.canRedo }))),
+      h('div', { class: 'cad-scroll hist-list' }, items));
+    const list = historyPanel.querySelector('.hist-list');
+    const cur = list?.querySelector('.current');
+    if (cur) list.scrollTop = Math.max(0, cur.offsetTop - list.clientHeight + 60);
+  }
+
+  // ------------------------------------------------------------------ UI: properties
   let valueInputs = {};
-  function numberField(label, getter, setter) {
+  function numberField(label, getter, setter, undoLabel) {
     const input = h('input', { class: 'input num', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', 'aria-label': label });
     input.value = fmt(getter());
     input.addEventListener('change', () => {
       const n = D.parseNumber(input.value);
       if (n === null) { toast(`${label}: enter a number.`, 'error', 2500); input.value = fmt(getter()); return; }
-      change((d) => setter(d, n));
-      const problem = D.validateModel(doc);
-      if (problem) { undo(); toast(`${label}: ${n} is out of range.`, 'error', 3000); }
+      if (!change(undoLabel, (d) => setter(d, n))) input.value = fmt(getter());
     });
     return { input, refresh: () => { if (document.activeElement !== input) input.value = fmt(getter()); } };
   }
@@ -325,36 +439,35 @@ export async function render({ params, view }) {
   function paintInspector() {
     valueInputs = {};
     const o = selected();
+    inspector.classList.toggle('hidden', !o && !doc.objects.length);
     if (!o) {
       const b = D.docBounds(doc, { visibleOnly: true });
-      mount(inspector, h('div', { class: 'pal-title' }, 'Model'),
-        h('div', { class: 'insp-empty muted' }, doc.objects.length ? 'Select an object to edit it.' : 'Add a shape from the left to start modelling.'),
-        b ? h('div', { class: 'stat-list' },
-          h('div', {}, h('span', { class: 'faint' }, 'Objects'), h('strong', {}, String(doc.objects.length))),
-          h('div', {}, h('span', { class: 'faint' }, 'Overall size'), h('strong', { class: 'mono' }, `${fmt(b.size[0])} × ${fmt(b.size[1])} × ${fmt(b.size[2])} mm`))) : null,
-        h('div', { class: 'pal-hint', style: { marginTop: '14px' } }, 'Left-drag: orbit · Right-drag or Shift+drag: pan · Wheel: zoom · Arrow keys: nudge · Del: delete'));
+      mount(inspector, h('div', { class: 'cad-panel-head' }, h('h3', {}, 'Model')),
+        h('div', { class: 'cad-body' },
+          b ? h('div', { class: 'stat-list' },
+            h('div', {}, h('span', { class: 'faint' }, 'Objects'), h('strong', {}, String(doc.objects.length))),
+            h('div', {}, h('span', { class: 'faint' }, 'Overall size'), h('strong', { class: 'mono' }, `${fmt(b.size[0])} × ${fmt(b.size[1])} × ${fmt(b.size[2])} mm`))) : h('span', { class: 'muted' }, 'Nothing visible.'),
+          h('div', { class: 'pal-hint', style: { marginTop: '10px' } }, 'Drag: orbit · Right-drag / Shift+drag: pan · Wheel: zoom · Arrows: nudge · Del: delete')));
       return;
     }
-    const triple = (title, key, step) => h('div', { class: 'field', style: { marginTop: '10px' } }, h('div', { class: 'label' }, title),
+    const triple = (title, key) => h('div', { class: 'field', style: { marginTop: '8px' } }, h('div', { class: 'label' }, title),
       h('div', { class: 'xyz' }, AXES.map((ax, i) => {
-        const f = numberField(`${title} ${ax}`, () => (D.findObject(doc, o.id) || o)[key][i], (d, n) => { D.findObject(d, o.id)[key][i] = n; });
+        const f = numberField(`${title} ${ax}`, () => (D.findObject(doc, o.id) || o)[key][i], (d, n) => { D.findObject(d, o.id)[key][i] = n; }, `${key === 'size' ? 'Resize' : key === 'rotation' ? 'Rotate' : 'Move'} ${o.name}`);
         valueInputs[`${key}${i}`] = f;
         return h('label', { class: 'xyz-cell' }, h('span', {}, ax), f.input);
       })));
     const nameInput = h('input', { class: 'input', type: 'text', maxlength: 120, 'aria-label': 'Object name' });
     nameInput.value = o.name;
-    nameInput.addEventListener('change', () => { const v = nameInput.value.trim(); if (!v) { nameInput.value = o.name; return; } change((d) => { D.findObject(d, o.id).name = v; }); });
+    nameInput.addEventListener('change', () => { const v = nameInput.value.trim(); if (!v) { nameInput.value = o.name; return; } change(`Rename ${o.name}`, (d) => { D.findObject(d, o.id).name = v; }); });
     mount(inspector,
-      h('div', { class: 'pal-title' }, `${D.SHAPES.find((t) => t.shape === o.shape).label}`),
-      h('div', { class: 'field' }, h('label', {}, 'Name'), nameInput),
-      h('div', { class: 'field', style: { marginTop: '10px' } }, h('div', { class: 'label' }, 'Colour'),
-        h('div', { class: 'swatches' }, D.COLORS.map((c) => h('button', { class: 'swatch', type: 'button', role: 'radio', 'aria-checked': String(c.value === o.color), title: c.name, 'aria-label': c.name, style: { background: c.value }, onClick: () => change((d) => { D.findObject(d, o.id).color = c.value; }) })))),
-      triple('Position (mm)', 'position'), triple('Rotation (°)', 'rotation'), triple('Size (mm)', 'size'),
-      h('div', { class: 'divider' }),
-      h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
-        btn('Duplicate', { size: 'sm', icon: 'copy', onClick: duplicateSelected }),
-        btn('Drop to ground', { size: 'sm', onClick: () => change((d) => D.dropToGround(D.findObject(d, o.id))) }),
-        btn('Delete', { size: 'sm', icon: 'trash', kind: 'danger', onClick: deleteSelected })));
+      h('div', { class: 'cad-panel-head' }, h('h3', {}, D.SHAPES.find((t) => t.shape === o.shape).label), h('span', { class: 'row', style: { gap: '2px' } },
+        iconBtn('copy', 'Duplicate (Ctrl+D)', duplicateSelected), iconBtn('trash', 'Delete (Del)', deleteSelected))),
+      h('div', { class: 'cad-body cad-scroll' },
+        h('div', { class: 'field' }, h('label', {}, 'Name'), nameInput),
+        h('div', { class: 'field', style: { marginTop: '8px' } }, h('div', { class: 'label' }, 'Colour'),
+          h('div', { class: 'swatches' }, D.COLORS.map((c) => h('button', { class: 'swatch', type: 'button', role: 'radio', 'aria-checked': String(c.value === o.color), title: c.name, 'aria-label': c.name, style: { background: c.value }, onClick: () => change(`Recolour ${o.name}`, (d) => { D.findObject(d, o.id).color = c.value; }) })))),
+        triple('Position (mm)', 'position'), triple('Rotation (°)', 'rotation'), triple('Size (mm)', 'size'),
+        h('div', { class: 'row', style: { marginTop: '10px' } }, btn('Drop to ground', { size: 'sm', onClick: () => change(`Drop ${o.name}`, (d) => D.dropToGround(D.findObject(d, o.id))) }))));
   }
 
   // ------------------------------------------------------------------ toolbar
@@ -369,23 +482,16 @@ export async function render({ params, view }) {
       btn('New', { size: 'sm', icon: 'plus', onClick: newModel }),
       iconBtn('edit', 'Rename model', renameModel, { disabled: !current }),
       iconBtn('trash', 'Delete model', deleteModel, { disabled: !current }),
-      h('span', { class: 'tb-sep' }),
-      iconBtn('undo', 'Undo (Ctrl+Z)', undo, { disabled: !history.canUndo }),
-      iconBtn('redo', 'Redo (Ctrl+Y)', redo, { disabled: !history.canRedo }),
-      h('span', { class: 'tb-sep' }),
-      iconBtn('zoomOut', 'Zoom out', () => zoomBy(1.25), { disabled: !current }),
-      iconBtn('zoomIn', 'Zoom in', () => zoomBy(1 / 1.25), { disabled: !current }),
-      iconBtn('fit', 'Fit model to window (F)', fit, { disabled: !current }),
-      snapSel,
+      h('span', { class: 'tb-sep' }), snapSel,
       h('span', { class: 'grow' }), saveStatus,
       btn('Export STL', { size: 'sm', icon: 'download', disabled: !current || !doc.objects.some((o) => o.visible !== false), onClick: exportStl }),
       btn('Save', { size: 'sm', icon: 'save', kind: dirty ? 'primary' : '', disabled: !current || !dirty, onClick: () => save().then((ok) => ok && toast('Model saved', 'success', 1800)) }));
     paintStatus();
   }
-  function paintAll() { syncScene(); paintList(); paintInspector(); paintToolbar(); paintHint(); }
+  function paintAll() { syncScene(); paintItems(); paintHistory(); paintInspector(); paintToolbar(); paintHint(); }
   function paintHint() {
-    hint.classList.toggle('hidden', doc.objects.length > 0);
-    if (!doc.objects.length) mount(hint, h('div', { class: 'empty-icon' }, icon('cube3d', 24)), h('strong', {}, 'Empty model'), h('span', { class: 'muted' }, 'Add a box, cylinder, cone or sphere from the left, then move, rotate and resize it. Export the result as an STL for printing.'));
+    hint.classList.toggle('hidden', doc.objects.length > 0 || !current);
+    if (!doc.objects.length) mount(hint, h('div', { class: 'empty-icon' }, icon('cube3d', 24)), h('strong', {}, 'Empty model'), h('span', { class: 'muted' }, 'Pick a shape from the tool rail, then move, rotate and resize it. Export the result as an STL for printing.'));
   }
 
   // --------------------------------------------------------------------- model ops
@@ -402,11 +508,11 @@ export async function render({ params, view }) {
       const m = await api('models.get', { id });
       current = { id: m.id, name: m.name };
       doc = { ...D.emptyModel(), ...m.data };
-      selectedId = null; dirty = false; saveFailed = false; history.clear();
+      selectedId = null; dirty = false; saveFailed = false; timeline.reset(doc);
       rememberModel(pid, id);
       if (!renderer && !scene) { initScene(); if (renderer) bindPointer(); }
-      paintPalette(); paintAll();
-      requestAnimationFrame(() => fit());
+      paintRails(); paintAll();
+      requestAnimationFrame(() => { resize(); fit(); });
     } catch (e) { toast(e.message, 'error'); }
   }
   async function createModel(name) {
@@ -440,7 +546,7 @@ export async function render({ params, view }) {
     } catch (e) { toast(`Export failed: ${e.message}`, 'error'); }
   }
   function paintEmpty() {
-    mount(root, toolbar, h('div', { class: 'wiring-none' }, emptyState({ icon: 'cube3d', title: 'No 3D models for this project', text: 'Build parts from simple shapes — boxes, cylinders, cones and spheres — position them precisely, and export an STL for 3D printing or CAD import.', actions: [btn('Create model', { icon: 'plus', kind: 'primary', onClick: async () => { const c = await createModel('Chassis'); if (!c) return; mount(root, toolbar, palette, canvasWrap, inspector); await openModel(c.id); } })] })));
+    mount(root, toolbar, h('div', { class: 'wiring-none' }, emptyState({ icon: 'cube3d', title: 'No 3D models for this project', text: 'Build parts from simple shapes — boxes, cylinders, cones and spheres — position them precisely, and export an STL for 3D printing or CAD import.', actions: [btn('Create model', { icon: 'plus', kind: 'primary', onClick: async () => { const c = await createModel('Chassis'); if (!c) return; mount(root, toolbar, stage); await openModel(c.id); } })] })));
     paintToolbar();
   }
 
@@ -456,13 +562,14 @@ export async function render({ params, view }) {
     else if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedId) { e.preventDefault(); deleteSelected(); } }
-    else if (e.key === 'Escape') { if (selectedId) { selectedId = null; syncScene(); paintInspector(); paintList(); } }
+    else if (e.key === 'Escape') { if (selectedId) { selectedId = null; syncScene(); paintInspector(); paintItems(); } }
     else if (e.key.toLowerCase() === 'f' && !mod) fit();
-    else if (selectedId && e.key.startsWith('Arrow') || (selectedId && (e.key === 'PageUp' || e.key === 'PageDown'))) {
+    else if (selectedId && (e.key.startsWith('Arrow') || e.key === 'PageUp' || e.key === 'PageDown')) {
       e.preventDefault();
       const step = (snapStep || 1) * (e.shiftKey ? 10 : 1);
       const v = { ArrowLeft: [-step, 0, 0], ArrowRight: [step, 0, 0], ArrowUp: [0, step, 0], ArrowDown: [0, -step, 0], PageUp: [0, 0, step], PageDown: [0, 0, -step] }[e.key];
-      if (v) change((d) => { const o = D.findObject(d, selectedId); o.position = o.position.map((p, i) => D.round(p + v[i])); });
+      const o = selected();
+      if (v && o) change(`Move ${o.name}`, (d) => { const x = D.findObject(d, selectedId); x.position = x.position.map((p, i) => D.round(p + v[i])); });
     }
   }
   document.addEventListener('keydown', onKey);
@@ -472,7 +579,7 @@ export async function render({ params, view }) {
   ro.observe(canvasWrap);
 
   // ------------------------------------------------------------------------ start
-  paintPalette(); paintToolbar();
+  paintRails(); paintToolbar(); paintItems(); paintHistory(); paintInspector();
   if (!models.length) paintEmpty();
   else await openModel(models.find((m) => m.id === lastModel(pid))?.id ?? models[0].id);
 

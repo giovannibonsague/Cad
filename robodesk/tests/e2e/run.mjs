@@ -175,7 +175,7 @@ await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export
   await modal().getByLabel('Model name').fill('Base plate');
   await modal().getByRole('button', { name: 'Create' }).click();
   await modal().waitFor({ state: 'detached' });
-  await page.locator('canvas.modeler-gl').waitFor();
+  await page.locator('canvas.cad-gl').waitFor();
 
   await page.getByRole('button', { name: 'Add Box' }).click();
   await page.getByRole('button', { name: 'Add Cylinder' }).click();
@@ -186,7 +186,7 @@ await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export
   await page.getByLabel('Size (mm) Z').fill('abc'); await page.getByLabel('Size (mm) Z').press('Enter');
   await waitToast(/enter a number/);
   await page.getByLabel('Size (mm) Z').fill('0'); await page.getByLabel('Size (mm) Z').press('Enter');
-  await waitToast(/out of range/);
+  await waitToast(/positive numbers|out of range/);
   await page.getByLabel('Size (mm) Z').fill('50'); await page.getByLabel('Size (mm) Z').press('Enter');
   await page.getByLabel('Object name').fill('Post'); await page.getByLabel('Object name').press('Enter');
   await page.getByRole('button', { name: 'Select Post' }).waitFor();
@@ -200,7 +200,7 @@ await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export
   assert.equal(m.data.objects.length, 2);
 
   // undo removes the rename; redo brings it back
-  await page.locator('canvas.modeler-gl').focus();
+  await page.locator('canvas.cad-gl').focus();
   await page.keyboard.press('Control+z');
   await page.getByRole('button', { name: 'Select Cylinder' }).waitFor();
   await page.keyboard.press('Control+y');
@@ -209,7 +209,7 @@ await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export
   await waitToast(/Model saved/);
 
   // the 3D view really draws something: the canvas is not a flat colour
-  const distinct = await page.locator('canvas.modeler-gl').evaluate((c) => {
+  const distinct = await page.locator('canvas.cad-gl').evaluate((c) => {
     const t = document.createElement('canvas'); t.width = 64; t.height = 40;
     const g = t.getContext('2d'); g.drawImage(c, 0, 0, 64, 40);
     const d = g.getImageData(0, 0, 64, 40).data; const set = new Set();

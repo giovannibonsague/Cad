@@ -27,7 +27,7 @@ export function setLastProject(id) {
 }
 
 export function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme || 'navy';
+  document.documentElement.dataset.theme = theme || 'graphite';
 }
 
 export async function loadAppState() {

@@ -5,11 +5,11 @@ use crate::error::{Error, Result};
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 
-pub const THEMES: [&str; 3] = ["navy", "midnight", "light"];
+pub const THEMES: [&str; 4] = ["graphite", "navy", "midnight", "light"];
 
 /// (key, default as JSON text)
 const DEFAULTS: [(&str, &str); 5] = [
-    ("theme", "\"navy\""),
+    ("theme", "\"graphite\""),
     ("autosave_enabled", "true"),
     ("autosave_interval_secs", "5"),
     ("confirm_destructive", "true"),
@@ -82,7 +82,7 @@ mod tests {
     fn defaults_set_and_validation() {
         let conn = db::open_memory().unwrap();
         let s = get_all(&conn).unwrap();
-        assert_eq!(s["theme"], "navy");
+        assert_eq!(s["theme"], "graphite");
         assert_eq!(s["autosave_enabled"], true);
 
         let s = set(&conn, "theme", &json!("light")).unwrap();
@@ -102,7 +102,7 @@ mod tests {
         conn.execute("INSERT INTO settings VALUES ('theme', '\"banana\"')", []).unwrap();
         conn.execute("INSERT INTO settings VALUES ('backup_keep', 'not json')", []).unwrap();
         let s = get_all(&conn).unwrap();
-        assert_eq!(s["theme"], "navy");
+        assert_eq!(s["theme"], "graphite");
         assert_eq!(s["backup_keep"], 10);
     }
 }

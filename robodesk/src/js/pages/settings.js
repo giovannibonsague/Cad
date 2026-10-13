@@ -6,7 +6,7 @@ import { navigate } from '../router.js';
 import { state, saveSetting, refreshInfo } from '../state.js';
 import { badge, banner, btn, confirmDialog, pageHead, panel, selectEl, switchEl, toast, alertDialog, createTable, emptyState } from '../ui.js';
 
-const THEME_LABELS = { navy: 'Navy (default)', midnight: 'Midnight (darker)', light: 'Light' };
+const THEME_LABELS = { graphite: 'Graphite (default)', navy: 'Navy', midnight: 'Midnight (darker)', light: 'Light' };
 const KIND_LABELS = { backup: 'Manual / scheduled', preimport: 'Before import', prerestore: 'Before restore', prereset: 'Before reset', premigrate: 'Before upgrade' };
 
 function row(title, desc, control) {

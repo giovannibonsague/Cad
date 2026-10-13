@@ -33,13 +33,13 @@ function buildSidebar() {
   const nav = $('#sidebar');
   const items = [];
   for (const n of NAV) {
-    if (n.group) items.push(h('div', { class: 'nav-label' }, n.group));
-    items.push(h('a', { class: 'nav-item', href: `#${n.path}`, dataset: { nav: n.path } }, icon(n.icon, 17), n.label));
+    if (n.group) items.push(h('div', { class: 'nav-label' }, h('span', {}, n.group)));
+    items.push(h('a', { class: 'nav-item', href: `#${n.path}`, dataset: { nav: n.path }, title: n.label }, icon(n.icon, 19), h('span', { class: 'nav-text' }, n.label)));
   }
   items.push(h('div', { class: 'nav-spacer' }));
-  items.push(h('a', { class: 'nav-item', href: '#/settings', dataset: { nav: '/settings' } }, icon('settings', 17), 'Settings'));
+  items.push(h('a', { class: 'nav-item', href: '#/settings', dataset: { nav: '/settings' }, title: 'Settings' }, icon('settings', 19), h('span', { class: 'nav-text' }, 'Settings')));
   items.push(h('div', { class: 'nav-foot' }, `RoboDesk v${state.info.version || ''}`));
-  mount(nav, items);
+  mount(nav, h('div', { class: 'rail' }, items));
 }
 
 function onRouteChange(route) {

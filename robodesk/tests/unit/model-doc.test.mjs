@@ -67,3 +67,24 @@ test('number parsing and snapping', () => {
   assert.equal(D.snap(13, 5), 15);
   assert.equal(D.snap(13, 0), 13);
 });
+
+test('timeline: labelled snapshots, jump, undo/redo, redo branch is discarded', () => {
+  const doc = D.emptyModel();
+  const t = new D.Timeline(doc);
+  assert.equal(t.canUndo, false);
+  D.addObject(doc, 'box'); t.push('Add Box', doc);
+  D.addObject(doc, 'sphere'); t.push('Add Sphere', doc);
+  assert.deepEqual(t.entries.map((e) => e.label), ['Start', 'Add Box', 'Add Sphere']);
+  assert.equal(t.undo().objects.length, 1);
+  assert.equal(t.redo().objects.length, 2);
+  assert.equal(t.jump(0).objects.length, 0);
+  assert.equal(t.cursor, 0);
+  assert.equal(t.jump(99), null);
+  const d2 = t.doc(); D.addObject(d2, 'cone'); t.push('Add Cone', d2);
+  assert.deepEqual(t.entries.map((e) => e.label), ['Start', 'Add Cone']);
+  assert.equal(t.canRedo, false);
+  const small = new D.Timeline(D.emptyModel(), 3);
+  for (let i = 0; i < 10; i++) small.push(`e${i}`, { objects: [], i });
+  assert.equal(small.entries.length, 4);
+  assert.equal(small.entries.at(-1).label, 'e9');
+});

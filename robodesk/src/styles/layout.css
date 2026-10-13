@@ -20,27 +20,39 @@
 .wc-close:hover { background: #c42b1c; color: #fff; }
 .wc svg { width: 12px; height: 12px; stroke-width: 1.2; }
 
-/* ---- Shell ---- */
-.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 0; }
-.sidebar {
-  background: var(--bg-sidebar); border-right: 1px solid var(--border);
-  padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
+/* ---- Shell: icon rail that expands on hover/focus ---- */
+.shell { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: 0; position: relative; }
+.sidebar { position: relative; z-index: 30; background: var(--bg-sidebar); min-height: 0; }
+.rail {
+  position: absolute; inset: 0 auto 0 0; width: var(--rail-w); overflow: hidden auto; padding: 10px 10px;
+  display: flex; flex-direction: column; gap: 4px; background: var(--bg-sidebar); border-right: 1px solid var(--border);
+  transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s;
 }
-.nav-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-faint); padding: 10px 10px 4px; }
+.sidebar:hover .rail, .sidebar:focus-within .rail { width: 224px; box-shadow: var(--shadow); }
+.nav-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-faint); padding: 10px 12px 2px;
+  height: 28px; white-space: nowrap; overflow: hidden; position: relative;
+}
+.nav-label::after { content: ""; position: absolute; left: 12px; right: 12px; top: 14px; height: 1px; background: var(--border); opacity: 1; transition: opacity 0.15s; }
+.nav-label span { opacity: 0; transition: opacity 0.15s; }
+.sidebar:hover .nav-label::after, .sidebar:focus-within .nav-label::after { opacity: 0; }
+.sidebar:hover .nav-label span, .sidebar:focus-within .nav-label span { opacity: 1; }
 .nav-item {
-  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius);
-  color: var(--text-dim); border: 0; background: transparent; text-align: left; width: 100%; position: relative;
+  display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 12px; border-radius: 10px; flex: none;
+  color: var(--text-dim); border: 0; background: transparent; text-align: left; width: 100%; position: relative; white-space: nowrap;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
-.nav-item[aria-current="page"] { background: var(--accent-weak); color: var(--text); }
-.nav-item[aria-current="page"]::before {
-  content: ""; position: absolute; left: -8px; top: 7px; bottom: 7px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
-}
+.nav-item:active { transform: scale(0.97); }
+.nav-item[aria-current="page"] { background: var(--nav-active-bg); color: var(--nav-active-fg); }
 .nav-item svg { flex: none; }
-.nav-spacer { flex: 1; }
-.nav-foot { font-size: 11px; color: var(--text-faint); padding: 8px 10px; }
+.nav-text { opacity: 0; transition: opacity 0.12s; }
+.sidebar:hover .nav-text, .sidebar:focus-within .nav-text { opacity: 1; transition-delay: 0.06s; }
+.nav-spacer { flex: 1; min-height: 8px; }
+.nav-foot { font-size: 11px; color: var(--text-faint); padding: 8px 12px; white-space: nowrap; opacity: 0; transition: opacity 0.15s; }
+.sidebar:hover .nav-foot, .sidebar:focus-within .nav-foot { opacity: 1; }
 
-.view { overflow: auto; padding: 20px 24px 28px; min-width: 0; outline: none; }
+.view { overflow: auto; padding: 18px 22px 26px; min-width: 0; outline: none; }
 .view.flush { padding: 0; overflow: hidden; }
 
 /* ---- Status bar ---- */

@@ -1,6 +1,44 @@
 /* Design tokens. Every colour in the app comes from here so themes are a one-block change. */
 :root,
-:root[data-theme="navy"] {
+:root[data-theme="graphite"] {
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --bg-sidebar: #0b0b0d;
+  --bg-panel: #18181b;
+  --bg-raised: #212125;
+  --bg-input: #111113;
+  --bg-hover: #2a2a2f;
+  --bg-selected: #34343a;
+  --border: #26262b;
+  --border-strong: #38383f;
+  --text: #f4f4f5;
+  --text-dim: #a9a9b1;
+  --text-faint: #70707a;
+  --accent: #3d83f5;
+  --accent-hover: #6aa0ff;
+  --accent-weak: rgba(61, 131, 245, 0.18);
+  --accent-text: #ffffff;
+  --success: #3fcf8e;
+  --success-weak: rgba(63, 207, 142, 0.15);
+  --warning: #f5b546;
+  --warning-weak: rgba(245, 181, 70, 0.15);
+  --danger: #f2646d;
+  --danger-weak: rgba(242, 100, 109, 0.15);
+  --info: #4cc2f0;
+  --info-weak: rgba(76, 194, 240, 0.15);
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+  --canvas-bg: #0c0c0e;
+  --canvas-grid: #26262b;
+  --node-fill: #18181b;
+  --node-head: #232328;
+  --nav-active-bg: #ececef;
+  --nav-active-fg: #111113;
+  --sel-bar: transparent;
+  --panel-glass: rgba(24, 24, 27, 0.86);
+}
+
+:root[data-theme="navy"],
+:root[data-theme="midnight"] {
   color-scheme: dark;
   --bg: #0a1020;
   --bg-sidebar: #0c1426;
@@ -31,6 +69,10 @@
   --canvas-grid: #14213b;
   --node-fill: #111d35;
   --node-head: #18294b;
+  --nav-active-bg: var(--accent-weak);
+  --nav-active-fg: var(--text);
+  --sel-bar: var(--accent);
+  --panel-glass: rgba(15, 24, 41, 0.86);
 }
 
 :root[data-theme="midnight"] {
@@ -79,13 +121,19 @@
   --canvas-grid: #dfe6f2;
   --node-fill: #ffffff;
   --node-head: #e6eefc;
+  --nav-active-bg: #14203a;
+  --nav-active-fg: #ffffff;
+  --sel-bar: var(--accent);
+  --panel-glass: rgba(255, 255, 255, 0.88);
 }
 
 :root {
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
-  --radius: 6px;
-  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --rail-w: 64px;
   --row-h: 32px;
   --titlebar-h: 36px;
   --statusbar-h: 24px;

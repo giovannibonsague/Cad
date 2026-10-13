@@ -155,3 +155,21 @@ export function parseNumber(text) {
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Labelled edit history: every entry is a full snapshot, so jumping to any point is exact. */
+export class Timeline {
+  constructor(doc, limit = 200) { this.limit = limit; this.reset(doc); }
+  reset(doc) { this.entries = [{ label: 'Start', snap: JSON.stringify(doc) }]; this.cursor = 0; }
+  push(label, doc) {
+    this.entries.length = this.cursor + 1; // a new edit discards the redo branch
+    this.entries.push({ label, snap: JSON.stringify(doc) });
+    if (this.entries.length > this.limit + 1) this.entries.shift();
+    this.cursor = this.entries.length - 1;
+  }
+  get canUndo() { return this.cursor > 0; }
+  get canRedo() { return this.cursor < this.entries.length - 1; }
+  doc() { return JSON.parse(this.entries[this.cursor].snap); }
+  undo() { if (!this.canUndo) return null; this.cursor--; return this.doc(); }
+  redo() { if (!this.canRedo) return null; this.cursor++; return this.doc(); }
+  jump(i) { if (!Number.isInteger(i) || i < 0 || i >= this.entries.length) return null; this.cursor = i; return this.doc(); }
+}
