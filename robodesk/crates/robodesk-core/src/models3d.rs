@@ -96,6 +96,11 @@ pub fn validate_document(doc: &Value) -> Result<usize> {
                 return Err(bad("'visible' must be true or false."));
             }
         }
+        if let Some(v) = o.get("op") {
+            if !matches!(v.as_str(), Some("add") | Some("subtract")) {
+                return Err(bad("'op' must be \"add\" or \"subtract\"."));
+            }
+        }
     }
     Ok(objects.len())
 }
@@ -235,11 +240,16 @@ fn rot_matrix(deg: V3) -> [[f64; 3]; 3] {
 }
 
 /// All visible objects as world-space triangles (millimetres).
+/// A "cut" object removes material (boolean subtract) instead of adding it.
+pub fn is_cut(o: &Value) -> bool {
+    o.get("op").and_then(Value::as_str) == Some("subtract")
+}
+
 pub fn triangles(doc: &Value) -> Result<Vec<Tri>> {
     validate_document(doc)?;
     let mut out = Vec::new();
     for o in doc["objects"].as_array().into_iter().flatten() {
-        if o.get("visible").and_then(Value::as_bool) == Some(false) {
+        if o.get("visible").and_then(Value::as_bool) == Some(false) || is_cut(o) {
             continue;
         }
         let shape = o["shape"].as_str().unwrap_or("box");
@@ -298,11 +308,29 @@ pub fn to_binary_stl(tris: &[Tri], title: &str) -> Vec<u8> {
 pub fn export_stl(conn: &Connection, id: i64, path: &str) -> Result<Value> {
     let p = crate::data::require_file_ext(path, "stl")?;
     let model = get(conn, id)?;
+    if model.data["objects"].as_array().into_iter().flatten().any(|o| is_cut(o) && o.get("visible").and_then(Value::as_bool) != Some(false)) {
+        return Err(Error::validation("data", "This model has cuts; export it from the 3D modeler so the cuts are applied."));
+    }
     let tris = triangles(&model.data)?;
     if tris.is_empty() {
         return Err(Error::validation("data", "Nothing to export: the model has no visible objects."));
     }
     crate::data::write_atomic(&p, &to_binary_stl(&tris, &model.meta.name))?;
+    Ok(json!({ "path": path, "triangles": tris.len(), "volume_mm3": volume_of(&tris) }))
+}
+
+/// Write a mesh computed by the front end (after boolean cuts) as binary STL.
+/// `vertices` is a flat list: nine numbers (three XYZ corners) per triangle.
+pub fn export_mesh(name: &str, path: &str, vertices: &[f64]) -> Result<Value> {
+    let p = crate::data::require_file_ext(path, "stl")?;
+    if vertices.is_empty() || vertices.len() % 9 != 0 {
+        return Err(Error::validation("vertices", "Nothing to export: the mesh is empty or malformed."));
+    }
+    if vertices.len() > 9 * 2_000_000 || vertices.iter().any(|v| !v.is_finite() || v.abs() > 1.0e7) {
+        return Err(Error::validation("vertices", "The mesh is too large or contains invalid numbers."));
+    }
+    let tris: Vec<Tri> = vertices.chunks_exact(9).map(|c| [[c[0], c[1], c[2]], [c[3], c[4], c[5]], [c[6], c[7], c[8]]]).collect();
+    crate::data::write_atomic(&p, &to_binary_stl(&tris, name))?;
     Ok(json!({ "path": path, "triangles": tris.len(), "volume_mm3": volume_of(&tris) }))
 }
 
@@ -395,5 +423,31 @@ mod tests {
         assert!(export_stl(&conn, m.meta.id, dir.path().join("x.txt").to_str().unwrap()).is_err());
         let empty = create(&conn, p, "Empty", None).unwrap();
         assert!(export_stl(&conn, empty.meta.id, path.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn cuts_are_skipped_by_triangles_and_block_native_export() {
+        let mut cut = obj("hole", "cylinder", [0.0; 3], [0.0; 3], [2.0, 2.0, 40.0]);
+        cut["op"] = json!("subtract");
+        let d = doc(vec![obj("a", "box", [0.0; 3], [0.0; 3], [10.0, 10.0, 10.0]), cut.clone()]);
+        assert!((volume_of(&triangles(&d).unwrap()) - 1000.0).abs() < 1e-6);
+        let mut bad_op = cut;
+        bad_op["op"] = json!("xor");
+        assert!(validate_document(&doc(vec![bad_op])).is_err());
+    }
+
+    #[test]
+    fn export_mesh_writes_stl_and_rejects_bad_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.stl");
+        let ps = path.to_str().unwrap();
+        let tri = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let r = export_mesh("t", ps, &tri).unwrap();
+        assert_eq!(r["triangles"], 1);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 84 + 50);
+        assert!(export_mesh("t", ps, &[]).is_err());
+        assert!(export_mesh("t", ps, &tri[..8]).is_err());
+        assert!(export_mesh("t", ps, &[f64::NAN; 9]).is_err());
+        assert!(export_mesh("t", dir.path().join("m.txt").to_str().unwrap(), &tri).is_err());
     }
 }

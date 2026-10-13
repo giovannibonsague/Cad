@@ -3,11 +3,12 @@
 // Pure model logic lives in lib/model-doc.js; the backend validates and stores the document.
 // Layout follows a CAD workspace: Items tree (left), floating tool rails, view cube, History (right).
 
-import * as THREE from '../../vendor/three/three.module.min.js';
+import * as THREE from '../../vendor/three/three-csg.bundle.js';
 import { h, mount } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { api, native } from '../api.js';
 import * as D from '../lib/model-doc.js';
+import * as CSG from '../lib/model-csg.js';
 import { navigate } from '../router.js';
 import { state, resolveProject } from '../state.js';
 import { btn, confirmDialog, emptyState, formModal, iconBtn, noProjects, projectSelect, selectEl, toast } from '../ui.js';
@@ -36,7 +37,8 @@ export async function render({ params, view }) {
   let dirty = false; let saving = false; let saveFailed = false;
   let itemFilter = 'all';
   const collapsed = new Set();
-  let wireframe = false; let gridOn = true;
+  let wireframe = false; let gridOn = true; let previewCuts = true;
+  let resultMesh = null; let resultSig = '';
   const timeline = new D.Timeline(doc);
   let destroyed = false;
 
@@ -115,10 +117,10 @@ export async function render({ params, view }) {
   const redo = () => restore(timeline.redo());
   const jump = (i) => restore(timeline.jump(i));
 
-  function addShape(shape) {
+  function addShape(shape, op = 'add') {
     if (!current) return;
     let id = null;
-    const ok = change(`Add ${D.SHAPES.find((t) => t.shape === shape).label}`, (d) => { id = D.addObject(d, shape, { snapStep }).id; });
+    const ok = change(`Add ${D.SHAPES.find((t) => t.shape === shape).label}${op === 'subtract' ? ' cut' : ''}`, (d) => { id = D.addObject(d, shape, { snapStep, op }).id; });
     if (ok && id) { selectedId = id; spawn.set(id, performance.now()); paintAll(); animate(); }
   }
   function deleteSelected() { const o = selected(); if (o) { selectedId = null; change(`Delete ${o.name}`, (d) => D.removeObject(d, o.id)); } }
@@ -139,11 +141,7 @@ export async function render({ params, view }) {
 
   function unitGeometry(shape) {
     if (geoms[shape]) return geoms[shape];
-    let g;
-    if (shape === 'box') g = new THREE.BoxGeometry(1, 1, 1);
-    else if (shape === 'cylinder') { g = new THREE.CylinderGeometry(0.5, 0.5, 1, 48); g.rotateX(Math.PI / 2); }
-    else if (shape === 'cone') { g = new THREE.CylinderGeometry(0, 0.5, 1, 48); g.rotateX(Math.PI / 2); }
-    else { g = new THREE.SphereGeometry(0.5, 32, 16); g.rotateX(Math.PI / 2); }
+    const g = CSG.makeUnitGeometry(shape);
     geoms[shape] = { geo: g, edges: new THREE.EdgesGeometry(g, 35) };
     return geoms[shape];
   }
@@ -225,17 +223,37 @@ export async function render({ params, view }) {
         meshes.set(o.id, m);
       }
       applyTransform(m.mesh, o);
+      const cut = CSG.isCut(o);
+      const showResult = previewCuts && CSG.hasCuts(doc);
       m.mesh.visible = o.visible !== false;
-      m.mesh.material.color.set(o.color);
+      m.mesh.material.transparent = cut; m.mesh.material.opacity = cut ? 0.4 : 1; m.mesh.material.depthWrite = !cut;
+      m.mesh.material.visible = !showResult;
+      m.mesh.material.color.set(cut ? '#ff4d5e' : o.color);
       m.mesh.material.wireframe = wireframe;
       const sel = o.id === selectedId;
       m.mesh.material.emissive.set(sel ? 0x24467f : 0x000000);
       m.edges.material.color.set(sel ? 0x8dbbff : 0x000000);
       m.edges.material.opacity = sel ? 1 : 0.55;
-      m.edges.visible = !wireframe;
+      m.edges.visible = !wireframe && !showResult;
     }
+    syncResult();
     if (gridHelper) gridHelper.visible = gridOn;
     requestRender();
+  }
+
+  function syncResult() {
+    const want = previewCuts && CSG.hasCuts(doc);
+    const sig = want ? JSON.stringify(doc.objects.map((o) => [o.shape, o.position, o.rotation, o.size, o.visible, o.op])) : '';
+    if (sig === resultSig) { if (resultMesh) resultMesh.material.wireframe = wireframe; return; }
+    resultSig = sig;
+    if (resultMesh) { scene.remove(resultMesh); resultMesh.geometry.dispose(); resultMesh.material.dispose(); resultMesh = null; }
+    if (!want) return;
+    try {
+      const geo = CSG.buildResult(doc);
+      if (!geo) return;
+      resultMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8fb4ff', roughness: 0.45, metalness: 0.25, wireframe }));
+      scene.add(resultMesh);
+    } catch (e) { toast(`Could not compute the cut preview: ${e.message}`, 'error'); }
   }
 
   // -------------------------------------------------------------------- animation
@@ -375,12 +393,15 @@ export async function render({ params, view }) {
 
   // ------------------------------------------------------------- UI: rails and Items
   function paintRails() {
-    mount(railLeft, D.SHAPES.map((t) => h('button', { class: 'rail-btn', type: 'button', disabled: !current, title: `Add ${t.label}`, 'aria-label': `Add ${t.label}`, onClick: () => addShape(t.shape) }, icon(SHAPE_ICON[t.shape], 19))));
+    mount(railLeft, D.SHAPES.map((t) => h('button', { class: 'rail-btn', type: 'button', disabled: !current, title: `Add ${t.label}`, 'aria-label': `Add ${t.label}`, onClick: () => addShape(t.shape) }, icon(SHAPE_ICON[t.shape], 19))),
+      h('span', { class: 'rail-sep' }),
+      h('button', { class: 'rail-btn', type: 'button', disabled: !current, title: 'Add hole (cylinder cut)', 'aria-label': 'Add hole', onClick: () => addShape('cylinder', 'subtract') }, icon('hole', 19)));
     mount(railRight,
       h('button', { class: 'rail-btn', type: 'button', title: 'Fit model to window (F)', 'aria-label': 'Fit model to window', disabled: !current, onClick: fit }, icon('fit', 18)),
       h('button', { class: 'rail-btn', type: 'button', title: 'Zoom in', 'aria-label': 'Zoom in', disabled: !current, onClick: () => zoomBy(1 / 1.25) }, icon('zoomIn', 18)),
       h('button', { class: 'rail-btn', type: 'button', title: 'Zoom out', 'aria-label': 'Zoom out', disabled: !current, onClick: () => zoomBy(1.25) }, icon('zoomOut', 18)),
       h('span', { class: 'rail-sep' }),
+      h('button', { class: 'rail-btn', type: 'button', title: 'Preview result of cuts', 'aria-label': 'Preview cuts', 'aria-pressed': String(previewCuts), onClick: () => { previewCuts = !previewCuts; syncScene(); paintRails(); } }, icon('hole', 18)),
       h('button', { class: 'rail-btn', type: 'button', title: 'Wireframe', 'aria-label': 'Wireframe', 'aria-pressed': String(wireframe), onClick: () => { wireframe = !wireframe; syncScene(); paintRails(); } }, icon('wire', 18)),
       h('button', { class: 'rail-btn', type: 'button', title: 'Show grid', 'aria-label': 'Show grid', 'aria-pressed': String(gridOn), onClick: () => { gridOn = !gridOn; syncScene(); paintRails(); } }, icon('grid', 18)));
   }
@@ -391,7 +412,7 @@ export async function render({ params, view }) {
     const groups = D.SHAPES.map((t) => ({ t, list: visible.filter((o) => o.shape === t.shape) })).filter((g) => g.list.length);
     const row = (o) => h('div', { class: `obj-row ${o.id === selectedId ? 'selected' : ''}` },
       h('button', { class: 'obj-pick', type: 'button', 'aria-label': `Select ${o.name}`, 'aria-pressed': String(o.id === selectedId), onClick: () => select(o.id) },
-        h('span', { class: 'swatch sm', style: { background: o.color } }), h('span', { class: 'ellipsis' }, o.name)),
+        h('span', { class: 'swatch sm', style: { background: o.color } }), h('span', { class: 'ellipsis' }, o.name), CSG.isCut(o) ? h('span', { class: 'cut-badge' }, 'cut') : null),
       iconBtn(o.visible === false ? 'eyeOff' : 'eye', o.visible === false ? `Show ${o.name}` : `Hide ${o.name}`, () => change(`${o.visible === false ? 'Show' : 'Hide'} ${o.name}`, (d) => { const x = D.findObject(d, o.id); x.visible = x.visible === false; })));
     mount(itemsPanel,
       h('div', { class: 'cad-panel-head' }, h('h3', {}, 'Items'), h('span', { class: 'faint' }, String(doc.objects.length))),
@@ -464,6 +485,8 @@ export async function render({ params, view }) {
         iconBtn('copy', 'Duplicate (Ctrl+D)', duplicateSelected), iconBtn('trash', 'Delete (Del)', deleteSelected))),
       h('div', { class: 'cad-body cad-scroll' },
         h('div', { class: 'field' }, h('label', {}, 'Name'), nameInput),
+        h('div', { class: 'field', style: { marginTop: '8px' } }, h('div', { class: 'label' }, 'Type'),
+          selectEl({ label: 'Object type', value: o.op === 'subtract' ? 'subtract' : 'add', className: 'sm', options: [{ value: 'add', label: 'Solid (adds material)' }, { value: 'subtract', label: 'Cut (removes material)' }], onChange: (v) => change(`${v === 'subtract' ? 'Make cut' : 'Make solid'} ${o.name}`, (d) => { const x = D.findObject(d, o.id); if (v === 'subtract') x.op = 'subtract'; else delete x.op; }) })),
         h('div', { class: 'field', style: { marginTop: '8px' } }, h('div', { class: 'label' }, 'Colour'),
           h('div', { class: 'swatches' }, D.COLORS.map((c) => h('button', { class: 'swatch', type: 'button', role: 'radio', 'aria-checked': String(c.value === o.color), title: c.name, 'aria-label': c.name, style: { background: c.value }, onClick: () => change(`Recolour ${o.name}`, (d) => { D.findObject(d, o.id).color = c.value; }) })))),
         triple('Position (mm)', 'position'), triple('Rotation (°)', 'rotation'), triple('Size (mm)', 'size'),
@@ -541,7 +564,13 @@ export async function render({ params, view }) {
     try {
       const path = await native.pickSavePath('stl', `${current.name.replace(/[\\/:*?"<>|]+/g, '_')}.stl`);
       if (!path) return;
-      const r = await api('models.export_stl', { id: current.id, path });
+      let r;
+      if (CSG.hasCuts(doc)) {
+        const geo = CSG.buildResult(doc);
+        if (!geo) { toast('Nothing to export: only cuts are visible.', 'error'); return; }
+        r = await api('models.export_mesh', { name: current.name, path, vertices: CSG.trianglesOf(geo) });
+        geo.dispose();
+      } else r = await api('models.export_stl', { id: current.id, path });
       toast(`Exported ${r.triangles.toLocaleString()} triangles to ${path}`, 'success', 5000);
     } catch (e) { toast(`Export failed: ${e.message}`, 'error'); }
   }
@@ -592,6 +621,7 @@ export async function render({ params, view }) {
       await flush();
       if (renderer) {
         for (const m of meshes.values()) { m.mesh.material.dispose(); m.edges.material.dispose(); }
+        if (resultMesh) { resultMesh.geometry.dispose(); resultMesh.material.dispose(); }
         for (const g of Object.values(geoms)) { g.geo.dispose(); g.edges.dispose(); }
         renderer.dispose(); renderer.forceContextLoss(); renderer = null;
       }

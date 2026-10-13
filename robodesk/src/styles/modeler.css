@@ -68,3 +68,4 @@
 @keyframes cad-fade { from { opacity: 0; } }
 @media (max-width: 1100px) { .cad-rail-left { left: 260px; } .cad-items { width: 220px; } .cad-side { width: 230px; } .cad-rail-right, .view-cube-host { right: 258px; } }
 @media (prefers-reduced-motion: reduce) { .cad-panel, .cad-rail, .obj-group-body { animation: none !important; } .cube { transition: none; } }
+.cut-badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--danger-weak); color: var(--danger); font-weight: 600; }

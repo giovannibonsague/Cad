@@ -191,6 +191,7 @@ impl Core {
                 models3d::delete(&st.conn, arg(a, "id")?)?;
                 Ok(json!({ "deleted": true }))
             }
+            "models.export_mesh" => models3d::export_mesh(&arg::<String>(a, "name")?, &arg::<String>(a, "path")?, &arg::<Vec<f64>>(a, "vertices")?),
             "models.export_stl" => models3d::export_stl(&st.conn, arg(a, "id")?, &arg::<String>(a, "path")?),
 
             // --------------------------------------------------------- tasks

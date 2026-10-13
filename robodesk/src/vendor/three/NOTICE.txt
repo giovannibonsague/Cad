@@ -1,0 +1,2 @@
+three 0.180.0 (MIT), three-mesh-bvh 0.9.1 (MIT), three-bvh-csg 0.0.17 (MIT)
+Bundled with esbuild: entry re-exports three plus Brush/Evaluator/SUBTRACTION/ADDITION.

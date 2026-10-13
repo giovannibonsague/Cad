@@ -95,15 +95,16 @@ export function findFreeSpot(doc, candidate, step = 10) {
 }
 
 /** Add a new object resting on the ground plane (z = 0) at a free spot. Returns the object. */
-export function addObject(doc, shape, { snapStep = 0 } = {}) {
+export function addObject(doc, shape, { snapStep = 0, op = 'add' } = {}) {
   const tpl = SHAPES.find((t) => t.shape === shape);
   if (!tpl) throw new Error(`Unknown shape: ${shape}`);
   if (doc.objects.length >= MAX_OBJECTS) throw new Error(`A model can hold at most ${MAX_OBJECTS} objects.`);
   const o = {
-    id: nextId(doc), name: uniqueName(doc, tpl.label), shape,
+    id: nextId(doc), name: uniqueName(doc, op === 'subtract' ? `${tpl.label} cut` : tpl.label), shape,
     position: [0, 0, tpl.size[2] / 2], rotation: [0, 0, 0], size: [...tpl.size],
     color: COLORS[doc.objects.length % COLORS.length].value, visible: true,
   };
+  if (op === 'subtract') o.op = 'subtract';
   o.position = findFreeSpot(doc, o, Math.max(snapStep, 5)).map((v) => round(v));
   doc.objects.push(o);
   return o;
@@ -144,6 +145,7 @@ export function validateModel(doc) {
     if (!isTriple(o.size, 0.001, 1e5)) return `Size of “${o.name}” must be three positive numbers.`;
     if (!/^#[0-9a-fA-F]{6}$/.test(o.color || '')) return 'Colour must look like #rrggbb.';
     if (o.visible !== undefined && typeof o.visible !== 'boolean') return "'visible' must be true or false.";
+    if (o.op !== undefined && o.op !== 'add' && o.op !== 'subtract') return "'op' must be add or subtract.";
   }
   return null;
 }

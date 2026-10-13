@@ -8,7 +8,7 @@ HTML/CSS/JS (no framework, no CDN) and **SQLite**. No account, subscription or n
 Dashboard · Projects (create / edit / duplicate / archive / delete) · Parts Inventory (search, category
 filter, automatic inventory value) · Bill of Materials per project (exact cent math, tax, shipping, CSV
 export) · CAD Files (links to local `.f3d`/`.f3z` files; originals are never modified or deleted; missing
-files are flagged and can be relocated) · 3D Modeler (boxes, cylinders, cones and spheres: place, rotate, resize, colour, orbit/pan/zoom, snap, undo/redo, autosave, export binary STL; renders with a bundled copy of three.js, no internet needed) · Wiring Diagrams (interactive SVG editor: components, pins, coloured
+files are flagged and can be relocated) · 3D Modeler (boxes, cylinders, cones and spheres: place, rotate, resize, colour, orbit/pan/zoom, snap, undo/redo with a clickable History list, hole/cut objects (boolean subtract) with live preview, drag objects in the viewport, autosave, export binary STL; renders with a bundled copy of three.js, no internet needed) · Wiring Diagrams (interactive SVG editor: components, pins, coloured
 wires, drag, zoom/pan, undo/redo, autosave) · Build Planner (priority, status, due date, notes, reordering,
 progress) · Settings (theme, autosave, data location, backups, JSON export/import, sample data, reset).
 
@@ -62,6 +62,6 @@ changes use versioned migrations (`PRAGMA user_version`) with a backup before up
 - The Windows executable/installer has **not been built or run** in the environment this was written in (Linux).
   The Rust core, UI and shell compilation (`cargo check`) were verified there; Tauri IPC, native dialogs,
   the custom title-bar buttons and the installer should be smoke-tested on Windows first.
-- The 3D modeler builds solids from four primitives only; there are no boolean operations (cut/join), sketches, extrusions or STEP/Fusion import. STL export is verified in Rust (exact volumes, valid binary layout) and the 3D view in headless Chromium (software WebGL); it has not been run in WebView2 on Windows.
+- The 3D modeler builds solids from four primitives only; it supports union of overlapping solids and boolean cuts (holes), but there are no sketches, extrusions, fillets, constraints or STEP/Fusion import. Cuts are computed in the front end (bundled three-bvh-csg) and exported through `models.export_mesh`. STL export is verified in Rust (exact volumes, valid binary layout) and the 3D view in headless Chromium (software WebGL); it has not been run in WebView2 on Windows.
 - Automated UI tests cover dashboard, projects, inventory, BOM, the 3D modeler and planner; CAD Files, the wiring editor and settings are
   covered by core/unit tests but not yet by browser tests.

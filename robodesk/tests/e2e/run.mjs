@@ -229,6 +229,41 @@ await scenario('3D modeler: create, add shapes, edit numbers, undo, save, export
   assert.ok(tris > 12, 'box (12) plus cylinder triangles');
 });
 
+await scenario('3D modeler: a hole (boolean cut) is previewed and removes material from the exported STL', async () => {
+  const stlVolume = (file) => {
+    const b = fs.readFileSync(file); let v = 0;
+    for (let i = 0; i < b.readUInt32LE(80); i++) {
+      const f = (k) => b.readFloatLE(84 + i * 50 + 12 + k * 4);
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(f);
+      v += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    }
+    return v;
+  };
+  const before = stlVolume(path.join(work, 'plate.stl'));
+  await go('/modeler/1');
+  await page.locator('canvas.cad-gl').waitFor();
+  const saved = await apiCall(page, 'models.get', { id: (await apiCall(page, 'models.list', { project_id: 1 }))[0].id });
+  const box = saved.data.objects.find((o) => o.shape === 'box');
+  await page.getByRole('button', { name: 'Add hole' }).click();
+  await page.locator('.cut-badge').waitFor();
+  // centre the hole on the box so it drills through it
+  for (const [ax, val] of [['X', box.position[0]], ['Y', box.position[1]], ['Z', box.position[2]]]) {
+    const f = page.getByLabel(`Position (mm) ${ax}`); await f.fill(String(val)); await f.press('Enter');
+  }
+  await page.getByLabel('Size (mm) X').fill('10'); await page.getByLabel('Size (mm) X').press('Enter');
+  await page.getByLabel('Size (mm) Y').fill('10'); await page.getByLabel('Size (mm) Y').press('Enter');
+  await page.getByLabel('Size (mm) Z').fill('400'); await page.getByLabel('Size (mm) Z').press('Enter');
+  await page.waitForTimeout(300);
+  await shot('07-modeler-hole');
+  const stl2 = path.join(work, 'plate-hole.stl');
+  await setNative(page, 'pick_save_path', stl2);
+  await page.getByRole('button', { name: 'Export STL' }).click();
+  await waitToast(/Exported/);
+  const after = stlVolume(stl2);
+  assert.ok(after < before - 50, `cut should remove material (before ${before.toFixed(0)}, after ${after.toFixed(0)})`);
+  assert.ok(after > 0);
+});
+
 await scenario('planner: add tasks, complete one, progress, persistence across restart', async () => {
   await go('/planner/1');
   await page.getByRole('heading', { name: 'No tasks yet' }).waitFor();
